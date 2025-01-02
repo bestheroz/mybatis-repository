@@ -1,6 +1,6 @@
-package com.github.bestheroz.mybatis;
+package io.github.bestheroz.mybatis;
 
-import com.github.bestheroz.mybatis.type.ValueEnum;
+import io.github.bestheroz.mybatis.type.ValueEnum;
 import jakarta.persistence.Table;
 import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;

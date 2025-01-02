@@ -1,4 +1,4 @@
-package com.github.bestheroz.mybatis;
+package io.github.bestheroz.mybatis;
 
 import org.apache.ibatis.annotations.*;
 
