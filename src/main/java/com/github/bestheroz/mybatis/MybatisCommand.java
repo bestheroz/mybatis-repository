@@ -1,15 +1,15 @@
 package com.github.bestheroz.mybatis;
 
-import com.github.bestheroz.standard.common.util.LogUtils;
+import com.github.bestheroz.mybatis.type.ValueEnum;
 import jakarta.persistence.Table;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.ibatis.jdbc.SQL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
-import java.text.MessageFormat;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -18,8 +18,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@Slf4j
 public class MybatisCommand {
+  private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
+
   public static final String SELECT_ITEMS = "getDistinctAndTargetItemsByMapOrderByLimitOffset";
   public static final String SELECT_ITEM_BY_MAP = "getItemByMap";
   public static final String COUNT_BY_MAP = "countByMap";
@@ -30,15 +31,17 @@ public class MybatisCommand {
 
   public MybatisCommand() {}
 
-  private static final Set<String> METHOD_LIST =
-      Set.of(
-          SELECT_ITEMS,
-          SELECT_ITEM_BY_MAP,
-          COUNT_BY_MAP,
-          INSERT,
-          INSERT_BATCH,
-          UPDATE_MAP_BY_MAP,
-          DELETE_BY_MAP);
+  private static final Set<String> METHOD_LIST = Collections.unmodifiableSet(
+          new HashSet<>(Arrays.asList(
+                  SELECT_ITEMS,
+                  SELECT_ITEM_BY_MAP,
+                  COUNT_BY_MAP,
+                  INSERT,
+                  INSERT_BATCH,
+                  UPDATE_MAP_BY_MAP,
+                  DELETE_BY_MAP
+          ))
+  );
 
   public String getTableName() {
     return getTableName(this.getEntityClass());
@@ -63,56 +66,50 @@ public class MybatisCommand {
     final SQL sql = new SQL();
     sql.SELECT("COUNT(1) AS CNT").FROM(this.getTableName());
     this.getWhereSql(sql, whereConditions);
-    //    log.debug(sql.toString());
+    log.trace(sql.toString());
     return sql.toString();
   }
 
   private Class<?> getEntityClass() {
-    return Arrays.stream(new Throwable().getStackTrace())
-        .filter(this::isValidStackTraceElement)
-        .findFirst()
-        .map(this::getClassFromStackTraceElement)
-        .orElseThrow(
-            () -> {
-              log.warn("stackTraceElements is Empty");
-              return new RuntimeException("stackTraceElements is required");
-            });
+    for (StackTraceElement element : new Throwable().getStackTrace()) {
+      if (isValidStackTraceElement(element)) {
+        return getClassFromStackTraceElement(element);
+      }
+    }
+    log.warn("stackTraceElements is Empty");
+    throw new RuntimeException("stackTraceElements is required");
   }
 
   private boolean isValidStackTraceElement(StackTraceElement element) {
     try {
       Class<?> clazz = Class.forName(element.getClassName());
       return METHOD_LIST.contains(element.getMethodName())
-          && clazz.getInterfaces().length > 0
-          && clazz.getInterfaces()[0].getGenericInterfaces().length > 0;
+              && clazz.getInterfaces().length > 0
+              && clazz.getInterfaces()[0].getGenericInterfaces().length > 0;
     } catch (ClassNotFoundException e) {
-      log.warn(LogUtils.getStackTrace(e));
+      log.warn(getStackTrace(e));
       return false;
     }
   }
 
   private Class<?> getClassFromStackTraceElement(StackTraceElement element) {
     try {
-      return Class.forName(
-          StringUtils.substringBetween(
-              Class.forName(element.getClassName())
-                  .getInterfaces()[0]
-                  .getGenericInterfaces()[0]
-                  .getTypeName(),
-              "<",
-              ">"));
+      Class<?> clazz = Class.forName(element.getClassName());
+      String genericInterface = clazz.getInterfaces()[0].getGenericInterfaces()[0].getTypeName();
+      String className = substringBetween(genericInterface, "<", ">");
+      return Class.forName(className);
     } catch (ClassNotFoundException e) {
-      log.warn(LogUtils.getStackTrace(e));
+      log.warn(getStackTrace(e));
       throw new RuntimeException("Failed::ClassNotFoundException", e);
     }
   }
 
   private <T> Set<String> getEntityFields(final Class<T> entity) {
     return Stream.of(getAllFields(entity))
-        .map(Field::getName)
-        .distinct()
-        .filter(fieldName -> !MybatisProperties.getExcludeFields().contains(fieldName))
-        .collect(Collectors.toSet());
+            .map(Field::getName)
+            .distinct()
+            .filter(fieldName -> !MybatisProperties.getExcludeFields().contains(fieldName))
+            .collect(Collectors.toSet());
   }
 
   private Set<String> getEntityFields() {
@@ -120,23 +117,27 @@ public class MybatisCommand {
   }
 
   public String getDistinctAndTargetItemsByMapOrderByLimitOffset(
-      final Set<String> distinctColumns,
-      final Set<String> targetColumns,
-      final Map<String, Object> whereConditions,
-      final List<String> orderByConditions,
-      final Integer limit,
-      final Integer offset) {
+          final Set<String> distinctColumns,
+          final Set<String> targetColumns,
+          final Map<String, Object> whereConditions,
+          final List<String> orderByConditions,
+          final Integer limit,
+          final Integer offset) {
     final SQL sql = new SQL();
 
     if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
-      this.getEntityFields()
-          .forEach(field -> sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(field))));
+      for (String field : this.getEntityFields()) {
+        sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(field)));
+      }
     } else {
-      distinctColumns.forEach(
-          column -> sql.SELECT_DISTINCT(this.wrapIdentifier(getCamelCaseToSnakeCase(column))));
-      targetColumns.stream()
-          .filter(column -> !distinctColumns.contains(column))
-          .forEach(column -> sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(column))));
+      for (String column : distinctColumns) {
+        sql.SELECT_DISTINCT(this.wrapIdentifier(getCamelCaseToSnakeCase(column)));
+      }
+      for (String column : targetColumns) {
+        if (!distinctColumns.contains(column)) {
+          sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(column)));
+        }
+      }
     }
 
     sql.FROM(this.getTableName());
@@ -148,39 +149,47 @@ public class MybatisCommand {
     }
     this.getWhereSql(sql, whereConditions);
 
-    orderByConditions.forEach(
-        condition -> {
-          String column = getCamelCaseToSnakeCase(condition);
-          sql.ORDER_BY(
-              column.startsWith("-")
-                  ? this.wrapIdentifier(column.substring(1)) + " desc"
-                  : this.wrapIdentifier(column));
-        });
+    for (String condition : orderByConditions) {
+      String column = getCamelCaseToSnakeCase(condition);
+      if (column.startsWith("-")) {
+        sql.ORDER_BY(this.wrapIdentifier(column.substring(1)) + " desc");
+      } else {
+        sql.ORDER_BY(this.wrapIdentifier(column));
+      }
+    }
 
-    //    log.debug(sql.toString());
+    log.trace(sql.toString());
     return sql.toString();
   }
 
   public String getItemByMap(final Map<String, Object> whereConditions) {
     this.verifyWhereKey(whereConditions);
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
-        Set.of(), Set.of(), whereConditions, List.of(), null, null);
+            Collections.emptySet(),
+            Collections.emptySet(),
+            whereConditions,
+            Collections.emptyList(),
+            null,
+            null
+    );
   }
 
   public <T> String insert(@NonNull final T entity) {
     final SQL sql = new SQL();
     sql.INSERT_INTO(getTableName(entity.getClass()));
-    toMap(entity)
-        .forEach(
-            (key, value) -> {
-              if (!MybatisProperties.getExcludeFields().contains(key)) {
-                sql.VALUES(
-                    this.wrapIdentifier(getCamelCaseToSnakeCase(key)),
-                    this.getFormattedValue(value));
-              }
-            });
+    Map<String, Object> entityMap = toMap(entity);
+    for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
+      String key = entry.getKey();
+      Object value = entry.getValue();
+      if (!MybatisProperties.getExcludeFields().contains(key)) {
+        sql.VALUES(
+                this.wrapIdentifier(getCamelCaseToSnakeCase(key)),
+                this.getFormattedValue(value)
+        );
+      }
+    }
 
-    //    log.debug(sql.toString());
+    log.trace(sql.toString());
     return sql.toString();
   }
 
@@ -190,52 +199,60 @@ public class MybatisCommand {
       throw new RuntimeException("entities empty");
     }
     final SQL sql = new SQL();
-    sql.INSERT_INTO(this.wrapIdentifier(getTableName(entities.getFirst().getClass())));
-    final Set<String> columns = this.getEntityFields(entities.getFirst().getClass());
+    String tableName = this.wrapIdentifier(getTableName(entities.get(0).getClass()));
+    sql.INSERT_INTO(tableName);
+    final Set<String> columns = this.getEntityFields(entities.get(0).getClass());
 
-    sql.INTO_COLUMNS(
-        columns.stream()
+    String columnsJoined = columns.stream()
             .filter(item -> !MybatisProperties.getExcludeFields().contains(item))
             .map(str -> this.wrapIdentifier(getCamelCaseToSnakeCase(str)))
-            .collect(Collectors.joining(", ")));
+            .collect(Collectors.joining(", "));
+    sql.INTO_COLUMNS(columnsJoined);
 
-    final List<ArrayList<String>> valuesList =
-        entities.stream()
-            .map(MybatisCommand::toMap)
-            .map(
-                entity ->
-                    new ArrayList<>(
-                        columns.stream()
-                            .map(column -> this.getFormattedValue(entity.get(column)))
-                            .toList()))
-            .toList();
-    sql.INTO_VALUES(
-        valuesList.stream()
-            .map(value -> StringUtils.join(value, ", "))
-            .collect(Collectors.joining("), (")));
-    //    log.debug(sql.toString());
+    List<List<String>> valuesList = new ArrayList<>();
+    for (T entity : entities) {
+      Map<String, Object> entityMap = toMap(entity);
+      List<String> values = new ArrayList<>();
+      for (String column : columns) {
+        String snakeCaseColumn = getCamelCaseToSnakeCase(column);
+        Object value = entityMap.get(column);
+        values.add(this.getFormattedValue(value));
+      }
+      valuesList.add(values);
+    }
+
+    String valuesJoined = valuesList.stream()
+            .map(value -> String.join(", ", value))
+            .collect(Collectors.joining("), ("));
+    sql.INTO_VALUES(valuesJoined);
+
+    log.trace(sql.toString());
     return sql.toString();
   }
 
   public String updateMapByMap(
-      final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
+          final Map<String, Object> updateMap,
+          final Map<String, Object> whereConditions
+  ) {
     this.verifyWhereKey(whereConditions);
 
     final SQL sql = new SQL();
     sql.UPDATE(this.getTableName());
-    updateMap.forEach(
-        (javaFieldName, value) -> {
-          if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
-            sql.SET(this.getEqualSql(getCamelCaseToSnakeCase(javaFieldName), value));
-          }
-        });
+    for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
+      String javaFieldName = entry.getKey();
+      Object value = entry.getValue();
+      if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
+        String dbColumnName = getCamelCaseToSnakeCase(javaFieldName);
+        sql.SET(this.getEqualSql(dbColumnName, value));
+      }
+    }
 
     this.getWhereSql(sql, whereConditions);
-    if (!StringUtils.containsIgnoreCase(sql.toString(), "WHERE ")) {
+    if (!sql.toString().toLowerCase().contains("where ")) {
       log.warn("whereConditions are empty");
       throw new RuntimeException("whereConditions are empty");
     }
-    //    log.debug(sql.toString());
+    log.trace(sql.toString());
     return sql.toString();
   }
 
@@ -245,79 +262,83 @@ public class MybatisCommand {
     sql.DELETE_FROM(this.getTableName());
     this.getWhereSql(sql, whereConditions);
     this.requiredWhereConditions(sql);
-    //    log.debug(sql.toString());
+    log.trace(sql.toString());
     return sql.toString();
   }
 
   private void requiredWhereConditions(final SQL sql) {
-    if (!StringUtils.containsIgnoreCase(sql.toString(), "WHERE ")) {
+    if (!sql.toString().toLowerCase().contains("where ")) {
       log.warn("whereConditions are empty");
       throw new RuntimeException("whereConditions are required");
     }
   }
 
   private String getWhereString(
-      final String conditionType, final String dbColumnName, final Object value) {
+          final String conditionType,
+          final String dbColumnName,
+          final Object value
+  ) {
     switch (conditionType) {
       case "ne":
       case "not":
-        return MessageFormat.format("`{0}` <> {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format("`%s` <> %s", dbColumnName, this.getFormattedValue(value));
       case "in":
-        {
-          if (value instanceof List) {
-            log.warn("conditionType 'in' is require Set");
-            throw new RuntimeException(
-                "conditionType 'in' is require Set, yours : " + value.getClass());
-          }
-          final Set<?> values = (Set<?>) value;
-          if (values.isEmpty()) {
-            log.warn("WHERE - empty in cause : {}", dbColumnName);
-            throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
-          }
-          return MessageFormat.format(
-              "`{0}` IN ({1})",
-              dbColumnName,
-              values.stream().map(this::getFormattedValue).collect(Collectors.joining(", ")));
-        }
-      case "notIn":
-        if (value instanceof List) {
-          log.warn("conditionType 'notIn' is require Set");
+        if (!(value instanceof Set)) {
+          log.warn("conditionType 'in' requires Set");
           throw new RuntimeException(
-              "conditionType 'notIn' is require Set, yours: " + value.getClass());
+                  "conditionType 'in' requires Set, yours : " + value.getClass()
+          );
         }
-        final Set<?> values = (Set<?>) value;
-        if (values.isEmpty()) {
+        Set<?> inValues = (Set<?>) value;
+        if (inValues.isEmpty()) {
           log.warn("WHERE - empty in cause : {}", dbColumnName);
           throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
         }
-        return MessageFormat.format(
-            "`{0}` NOT IN ({1})",
-            dbColumnName,
-            values.stream().map(this::getFormattedValue).collect(Collectors.joining(", ")));
+        String inFormatted = inValues.stream()
+                .map(this::getFormattedValue)
+                .collect(Collectors.joining(", "));
+        return String.format("`%s` IN (%s)", dbColumnName, inFormatted);
+      case "notIn":
+        if (!(value instanceof Set)) {
+          log.warn("conditionType 'notIn' requires Set");
+          throw new RuntimeException(
+                  "conditionType 'notIn' requires Set, yours: " + value.getClass()
+          );
+        }
+        Set<?> notInValues = (Set<?>) value;
+        if (notInValues.isEmpty()) {
+          log.warn("WHERE - empty in cause : {}", dbColumnName);
+          throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
+        }
+        String notInFormatted = notInValues.stream()
+                .map(this::getFormattedValue)
+                .collect(Collectors.joining(", "));
+        return String.format("`%s` NOT IN (%s)", dbColumnName, notInFormatted);
       case "null":
-        return MessageFormat.format("`{0}` IS NULL", dbColumnName);
+        return String.format("`%s` IS NULL", dbColumnName);
       case "notNull":
-        return MessageFormat.format("`{0}` IS NOT NULL", dbColumnName);
+        return String.format("`%s` IS NOT NULL", dbColumnName);
       case "contains":
-        return MessageFormat.format(
-            "INSTR(`{0}`, {1}) > 0", dbColumnName, this.getFormattedValue(value));
+        return String.format("INSTR(`%s`, %s) > 0", dbColumnName, this.getFormattedValue(value));
       case "notContains":
-        return MessageFormat.format(
-            "INSTR(`{0}`, {1}) = 0", dbColumnName, this.getFormattedValue(value));
+        return String.format("INSTR(`%s`, %s) = 0", dbColumnName, this.getFormattedValue(value));
       case "startsWith":
-        return MessageFormat.format(
-            "INSTR(`{0}`, {1}) = 1", dbColumnName, this.getFormattedValue(value));
+        return String.format("INSTR(`%s`, %s) = 1", dbColumnName, this.getFormattedValue(value));
       case "endsWith":
-        return MessageFormat.format(
-            "RIGHT(`{0}`, CHAR_LENGTH({1})) = {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format(
+                "RIGHT(`%s`, CHAR_LENGTH(%s)) = %s",
+                dbColumnName,
+                this.getFormattedValue(value),
+                this.getFormattedValue(value)
+        );
       case "lt":
-        return MessageFormat.format("`{0}` < {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format("`%s` < %s", dbColumnName, this.getFormattedValue(value));
       case "lte":
-        return MessageFormat.format("`{0}` <= {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format("`%s` <= %s", dbColumnName, this.getFormattedValue(value));
       case "gt":
-        return MessageFormat.format("`{0}` > {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format("`%s` > %s", dbColumnName, this.getFormattedValue(value));
       case "gte":
-        return MessageFormat.format("`{0}` >= {1}", dbColumnName, this.getFormattedValue(value));
+        return String.format("`%s` >= %s", dbColumnName, this.getFormattedValue(value));
       case "eq":
       default:
         return this.getEqualSql(dbColumnName, value);
@@ -325,78 +346,81 @@ public class MybatisCommand {
   }
 
   private String getEqualSql(final String dbColumnName, final Object value) {
-    return MessageFormat.format("`{0}` = {1}", dbColumnName, this.getFormattedValue(value));
+    return String.format("`%s` = %s", dbColumnName, this.getFormattedValue(value));
   }
 
   private String getFormattedValue(final Object value) {
-    switch (value) {
-      case null -> {
-        return "null";
-      }
-      case String str -> {
-        if (this.isISO8601String(str)) {
-          return "'"
-              + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS")
-              + "'";
-          // FIXME: MYSQL 사용시 주석을 풀어 위에 코드를 대체해주세요.
-          //        return MessageFormat.format(
-          //            "FROM_UNIXTIME({0,number,#})",
-          //            Integer.parseInt(String.valueOf(Instant.parse(str).toEpochMilli() / 1000)));
-        } else {
-          return "'" + str.replaceAll("'", "''") + "'";
-        }
-      }
-      case Instant instant -> {
-        return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
-        // FIXME: MYSQL 사용시 주석을 풀어 위에 코드를 대체해주세요.
-        //      MYSQL
-        //      return MessageFormat.format(
-        //          "FROM_UNIXTIME({0,number,#})",
-        //          Integer.parseInt(String.valueOf((instant).toEpochMilli() / 1000)));
-      }
-      case Enum<?> enum1 -> {
-        if (enum1 instanceof ValueEnum valueEnum) {
-          return "'" + valueEnum.getValue() + "'";
-        }
-        return "'" + enum1.name() + "'";
-      }
-      case List<?> list -> {
-        return "'["
-            + list.stream()
-                .map(v -> getFormattedValue(v).replaceAll("'", "\""))
-                .collect(Collectors.joining(", "))
-            + "]'";
-      }
-      case Set<?> set -> {
-        return "'["
-            + set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "))
-            + "]'";
-      }
-      case Map<?, ?> map -> {
-        StringBuilder sb = new StringBuilder();
-        map.forEach(
-            (k, v) -> {
-              if (!sb.isEmpty()) {
-                sb.append(", ");
-              }
-              sb.append("\"").append(k).append("\":").append(getFormattedValue(v));
-            });
-        return "\"{" + sb + "}\"";
-      }
-      default -> {
-        return value.toString().replaceAll("'", "''");
+    if (value == null) {
+      return "null";
+    }
+    if (value instanceof String) {
+      String str = (String) value;
+      if (isISO8601String(str)) {
+        return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+        // Uncomment for MySQL
+        // return String.format("FROM_UNIXTIME(%d)", Instant.parse(str).toEpochMilli() / 1000);
+      } else {
+        return "'" + str.replace("'", "''") + "'";
       }
     }
+    if (value instanceof Instant) {
+      Instant instant = (Instant) value;
+      return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+      // Uncomment for MySQL
+      // return String.format("FROM_UNIXTIME(%d)", instant.toEpochMilli() / 1000);
+    }
+    if (value instanceof Enum<?>) {
+      if (value instanceof ValueEnum) {
+        return "'" + ((ValueEnum) value).getValue() + "'";
+      }
+      return "'" + ((Enum<?>) value).name() + "'";
+    }
+    if (value instanceof List<?>) {
+      List<?> list = (List<?>) value;
+      String listStr = list.stream()
+              .map(v -> getFormattedValue(v).replace("'", "\""))
+              .collect(Collectors.joining(", "));
+      return "'[" + listStr + "]'";
+    }
+    if (value instanceof Set<?>) {
+      Set<?> set = (Set<?>) value;
+      String setStr = set.stream()
+              .map(this::getFormattedValue)
+              .collect(Collectors.joining(", "));
+      return "'[" + setStr + "]'";
+    }
+    if (value instanceof Map<?, ?>) {
+      Map<?, ?> map = (Map<?, ?>) value;
+      StringBuilder sb = new StringBuilder();
+      sb.append("\"{");
+      boolean first = true;
+      for (Map.Entry<?, ?> entry : map.entrySet()) {
+        if (!first) {
+          sb.append(", ");
+        }
+        first = false;
+        sb.append("\"").append(entry.getKey()).append("\":")
+                .append(getFormattedValue(entry.getValue()));
+      }
+      sb.append("}\"");
+      return sb.toString();
+    }
+    // Default case
+    return value.toString().replace("'", "''");
   }
 
   private void getWhereSql(final SQL sql, final Map<String, Object> whereConditions) {
-    whereConditions.forEach(
-        (key, value) -> {
-          final String columnName = StringUtils.substringBefore(key, ":");
-          final String conditionType =
-              StringUtils.defaultString(StringUtils.substringAfter(key, ":"), "eq");
-          sql.WHERE(this.getWhereString(conditionType, getCamelCaseToSnakeCase(columnName), value));
-        });
+    for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
+      String key = entry.getKey();
+      Object value = entry.getValue();
+      String columnName = substringBefore(key, ":");
+      String conditionType = substringAfter(key, ":");
+      if (conditionType.isEmpty()) {
+        conditionType = "eq";
+      }
+      String whereClause = getWhereString(conditionType, getCamelCaseToSnakeCase(columnName), value);
+      sql.WHERE(whereClause);
+    }
   }
 
   private String wrapIdentifier(final String identifier) {
@@ -404,17 +428,27 @@ public class MybatisCommand {
   }
 
   private boolean isISO8601String(final String value) {
-    return StringUtils.countMatches(value, '-') == 2
-        && StringUtils.countMatches(value, ':') == 2
-        && StringUtils.countMatches(value, 'T') == 1
-        && (StringUtils.endsWith(value, "Z") || StringUtils.countMatches(value, '+') == 1);
+    int countDash = 0;
+    int countColon = 0;
+    int countT = 0;
+    int countPlus = 0;
+    for (char c : value.toCharArray()) {
+      if (c == '-') countDash++;
+      if (c == ':') countColon++;
+      if (c == 'T') countT++;
+      if (c == '+') countPlus++;
+    }
+    return countDash == 2
+            && countColon == 2
+            && countT == 1
+            && (value.endsWith("Z") || countPlus == 1);
   }
 
   private static String getCamelCaseToSnakeCase(final String str) {
-    final StringBuilder result = new StringBuilder(str.length() * 2);
+    StringBuilder result = new StringBuilder(str.length() * 2);
     result.append(Character.toLowerCase(str.charAt(0)));
     for (int i = 1; i < str.length(); i++) {
-      final char ch = str.charAt(i);
+      char ch = str.charAt(i);
       if (Character.isUpperCase(ch)) {
         result.append('_').append(Character.toLowerCase(ch));
       } else {
@@ -432,7 +466,7 @@ public class MybatisCommand {
       try {
         map.put(field.getName(), field.get(source));
       } catch (final Exception e) {
-        log.warn(ExceptionUtils.getStackTrace(e));
+        log.warn(getStackTrace(e));
       }
     }
     return map;
@@ -440,13 +474,13 @@ public class MybatisCommand {
 
   private String converterInstantToString(final Instant instant, final String pattern) {
     return OffsetDateTime.ofInstant(instant, ZoneId.of("UTC"))
-        .format(DateTimeFormatter.ofPattern(pattern));
+            .format(DateTimeFormatter.ofPattern(pattern));
   }
 
   private static Field[] getAllFields(Class<?> clazz) {
     List<Field> fields = new ArrayList<>();
 
-    // 현재 클래스부터 시작해서 모든 상위 클래스를 순회
+    // Start with the current class and traverse all superclasses
     Class<?> currentClass = clazz;
     while (currentClass != null && currentClass != Object.class) {
       fields.addAll(Arrays.asList(currentClass.getDeclaredFields()));
@@ -454,5 +488,55 @@ public class MybatisCommand {
     }
 
     return fields.toArray(new Field[0]);
+  }
+
+  // Helper methods to replace StringUtils
+
+  private static String substringBetween(String str, String open, String close) {
+    if (str == null || open == null || close == null) {
+      return null;
+    }
+    int start = str.indexOf(open);
+    if (start != -1) {
+      start += open.length();
+      int end = str.indexOf(close, start);
+      if (end != -1) {
+        return str.substring(start, end);
+      }
+    }
+    return null;
+  }
+
+  private static String substringBefore(String str, String separator) {
+    if (str == null || separator == null) {
+      return str;
+    }
+    int pos = str.indexOf(separator);
+    if (pos == -1) {
+      return str;
+    }
+    return str.substring(0, pos);
+  }
+
+  private static String substringAfter(String str, String separator) {
+    if (str == null || separator == null) {
+      return "";
+    }
+    int pos = str.indexOf(separator);
+    if (pos == -1) {
+      return "";
+    }
+    return str.substring(pos + separator.length());
+  }
+
+  private static String defaultString(String str, String defaultStr) {
+    return str == null ? defaultStr : str;
+  }
+
+  private static String getStackTrace(Throwable e) {
+    StringWriter sw = new StringWriter();
+    PrintWriter pw = new PrintWriter(sw);
+    e.printStackTrace(pw);
+    return sw.toString();
   }
 }
