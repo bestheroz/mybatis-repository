@@ -1,8 +1,9 @@
 plugins {
     id "org.springframework.boot" version "2.7.18"
     id 'java'
-    id 'maven-publish'
     id 'signing'
+    id 'maven-publish'
+    id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
     id "io.spring.dependency-management" version "1.1.7"
     id "com.diffplug.spotless" version "5.17.1"
 }
@@ -14,12 +15,13 @@ java {
     sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
 }
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter:2.7.18'
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.4'
     implementation 'jakarta.persistence:jakarta.persistence-api:3.0.0'
@@ -52,32 +54,47 @@ publishing {
                 }
 
                 scm {
+                    url = 'https://github.com/bestheroz/mybatis-repository'
                     connection = 'scm:git:git://github.com/bestheroz/mybatis-repository.git'
                     developerConnection = 'scm:git:ssh://github.com:bestheroz/mybatis-repository.git'
-                    url = 'https://github.com/bestheroz/mybatis-repository'
                 }
-            }
-        }
-    }
-
-    repositories {
-        maven {
-            name = 'OSSRH'
-            url = project.version.endsWith('SNAPSHOT') ?
-                    uri('https://oss.sonatype.org/content/repositories/snapshots/') :
-                    uri('https://oss.sonatype.org/service/local/staging/deploy/maven2/')
-
-            credentials {
-                username = project.findProperty("ossrhUsername") ?: ""
-                password = project.findProperty("ossrhPassword") ?: ""
             }
         }
     }
 }
 
+nexusPublishing {
+    repositories {
+        sonatype {
+            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
+            username = findProperty('ossrhUsername')
+            password = findProperty('ossrhPassword')
+        }
+    }
+    connectTimeout = Duration.ofMinutes(3)
+    clientTimeout = Duration.ofMinutes(3)
+}
+
 signing {
-    useGpgCmd()
+    def signingKey = findProperty("signing.secretKey")
+    def signingPassword = findProperty("signing.password")
+    def keyId = findProperty("signing.keyId")
+
+    useInMemoryPgpKeys(keyId, signingKey, signingPassword)
     sign publishing.publications.mavenJava
+}
+
+// gradle.properties 파일에서 설정을 가져오도록 수정
+if (project.hasProperty('signing.keyId') &&
+        project.hasProperty('signing.password') &&
+        project.hasProperty('signing.secretKey')) {
+
+    signing {
+        sign configurations.archives
+    }
+} else {
+    println "Signing properties are not available. Skipping signing tasks."
 }
 
 spotless {
