@@ -1,0 +1,93 @@
+plugins {
+    id "org.springframework.boot" version "2.7.18"
+    id 'java'
+    id 'maven-publish'
+    id 'signing'
+    id "io.spring.dependency-management" version "1.1.7"
+    id "com.diffplug.spotless" version "5.17.1"
+}
+
+group = 'io.github.bestheroz'
+version = '0.0.1-SNAPSHOT'
+description = 'MyBatis Repository Interface'
+java {
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+}
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.4'
+    implementation 'jakarta.persistence:jakarta.persistence-api:3.0.0'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+
+            pom {
+                name = 'mybatis-repository'
+                description = 'MyBatis Repository Interface'
+                url = 'https://github.com/bestheroz/mybatis-repository'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'bestheroz'
+                        name = 'Joony.Kim'
+                        email = 'bestheroz@gmail.com'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/bestheroz/mybatis-repository.git'
+                    developerConnection = 'scm:git:ssh://github.com:bestheroz/mybatis-repository.git'
+                    url = 'https://github.com/bestheroz/mybatis-repository'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'OSSRH'
+            url = project.version.endsWith('SNAPSHOT') ?
+                    uri('https://oss.sonatype.org/content/repositories/snapshots/') :
+                    uri('https://oss.sonatype.org/service/local/staging/deploy/maven2/')
+
+            credentials {
+                username = project.findProperty("ossrhUsername") ?: ""
+                password = project.findProperty("ossrhPassword") ?: ""
+            }
+        }
+    }
+}
+
+signing {
+    useGpgCmd()
+    sign publishing.publications.mavenJava
+}
+
+spotless {
+    java {
+        importOrder()
+
+//        cleanthat()          // has its own section below
+
+        googleJavaFormat()   // has its own section below
+
+//        formatAnnotations()  // fixes formatting of type annotations, see below
+    }
+}
