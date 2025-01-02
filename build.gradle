@@ -1,16 +1,14 @@
 plugins {
     id "org.springframework.boot" version "2.7.18"
     id 'java'
-    id 'signing'
-    id 'maven-publish'
-    id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
+    id "com.vanniktech.maven.publish" version "0.30.0"
     id "io.spring.dependency-management" version "1.1.7"
     id "com.diffplug.spotless" version "5.17.1"
 }
 
 group = 'io.github.bestheroz'
-version = '0.0.1-SNAPSHOT'
-description = 'MyBatis Repository Interface'
+version = '0.0.1'
+description = "MyBatis Repository's Interface"
 java {
     sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
@@ -27,75 +25,49 @@ dependencies {
     implementation 'jakarta.persistence:jakarta.persistence-api:3.0.0'
 }
 
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
+import com.vanniktech.maven.publish.SonatypeHost
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
 
-            pom {
-                name = 'mybatis-repository'
-                description = 'MyBatis Repository Interface'
-                url = 'https://github.com/bestheroz/mybatis-repository'
+    signAllPublications()
 
-                licenses {
-                    license {
-                        name = 'The Apache License, Version 2.0'
-                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                        distribution = 'repo'
-                    }
-                }
+    // 프로젝트의 그룹 ID, 아티팩트 ID, 버전 설정
+    coordinates("io.github.bestheroz", "mybatis-repository", "0.0.1")
 
-                developers {
-                    developer {
-                        id = 'bestheroz'
-                        name = 'Joony.Kim'
-                        email = 'bestheroz@gmail.com'
-                    }
-                }
+    // POM 정보 설정
+    pom {
+        name.set("Mybatis Repository")  // 프로젝트 이름
+        description.set("MyBatis Repository's Interface")  // 프로젝트 설명
+        url.set("https://github.com/bestheroz/mybatis-repository")  // 프로젝트 URL
+        inceptionYear.set("2024")  // 프로젝트 시작 연도
 
-                scm {
-                    url = 'https://github.com/bestheroz/mybatis-repository'
-                    connection = 'scm:git:git://github.com/bestheroz/mybatis-repository.git'
-                    developerConnection = 'scm:git:ssh://github.com:bestheroz/mybatis-repository.git'
-                }
+        // 라이선스 정보 설정
+        licenses {
+            license {
+                name.set("The Apache License, Version 2.0")
+                url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
             }
         }
-    }
-}
 
-nexusPublishing {
-    repositories {
-        sonatype {
-            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
-            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
-            username = findProperty('ossrhUsername')
-            password = findProperty('ossrhPassword')
+        // 개발자 정보 설정
+        developers {
+            developer {
+                id.set("bestheroz")  // 개발자 ID
+                name.set("Joony.Kim")  // 개발자 이름
+                url.set("https://github.com/bestheroz")  // 개발자 URL
+            }
+        }
+
+        // 소스 코드 관리(SCM) 정보 설정
+        scm {
+            url.set("https://github.com/bestheroz/mybatis-repository")  // SCM URL
+            connection.set("scm:git:git://github.com/bestheroz/mybatis-repository.git")
+            developerConnection.set("scm:git:ssh://git@github.com:bestheroz/mybatis-repository.git")
         }
     }
-    connectTimeout = Duration.ofMinutes(3)
-    clientTimeout = Duration.ofMinutes(3)
 }
 
-signing {
-    def signingKey = findProperty("signing.secretKey")
-    def signingPassword = findProperty("signing.password")
-    def keyId = findProperty("signing.keyId")
-
-    useInMemoryPgpKeys(keyId, signingKey, signingPassword)
-    sign publishing.publications.mavenJava
-}
-
-// gradle.properties 파일에서 설정을 가져오도록 수정
-if (project.hasProperty('signing.keyId') &&
-        project.hasProperty('signing.password') &&
-        project.hasProperty('signing.secretKey')) {
-
-    signing {
-        sign configurations.archives
-    }
-} else {
-    println "Signing properties are not available. Skipping signing tasks."
-}
 
 spotless {
     java {
