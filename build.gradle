@@ -1,3 +1,5 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     id "org.springframework.boot" version "2.7.18"
     id 'java'
@@ -9,7 +11,7 @@ plugins {
 ext {
     GROUP_ID = 'io.github.bestheroz'
     ARTIFACT_ID = 'mybatis-repository'
-    VERSION = '0.2.4'
+    VERSION = '0.1.1'
     DESCRIPTION = "MyBatis Repository's Interface"
     GITHUB_URL = "https://github.com/bestheroz/mybatis-repository"
 }
@@ -19,8 +21,8 @@ version = VERSION
 description = DESCRIPTION
 
 java {
-    sourceCompatibility = '1.8'
-    targetCompatibility = '1.8'
+    sourceCompatibility = '11'
+    targetCompatibility = '11'
 }
 
 repositories {
@@ -34,7 +36,6 @@ dependencies {
     implementation 'jakarta.persistence:jakarta.persistence-api:3.0.0'
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
 
@@ -77,4 +78,9 @@ spotless {
         importOrder()
         googleJavaFormat()
     }
+}
+
+signing {
+    useInMemoryPgpKeys(System.getenv("GPG_PRIVATE_KEY"), System.getenv("SIGNING_PASSWORD"))
+    sign(publishing.publications)
 }
