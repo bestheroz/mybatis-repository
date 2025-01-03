@@ -17,7 +17,7 @@ jobs:
     steps:
       # 1. 저장소 체크아웃
       - name: Checkout Repository
-        uses: actions/checkout@main
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0  # 태그 접근을 위해 전체 기록을 가져옴
 
@@ -39,7 +39,21 @@ jobs:
           java-version: '11'
           cache: 'gradle'
 
-      # 5. Maven Central에 배포
+      # 5. GPG 키 설정 (In-Memory PGP 키 사용)
+      - name: Import GPG Key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf
+          echo "keyid-format 0xlong" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpg --list-keys
+          echo "default-key $SIGNING_KEY_ID" >> ~/.gnupg/gpg.conf
+
+      # 6. Maven Central에 배포
       - name: Build and Publish
         uses: gradle/gradle-build-action@main
         env:
@@ -57,7 +71,7 @@ jobs:
             -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} 
             -Psigning.password=${{ env.SIGNING_PASSWORD }}
 
-      # 6. build.gradle 변경 사항 커밋
+      # 7. build.gradle 변경 사항 커밋
       - name: Commit Changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
