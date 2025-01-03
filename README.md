@@ -1,6 +1,6 @@
 # MyBatis Repository
 
-[![GitHub](https://img.shields.io/github/license/bestheroz/mybatis-repository)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.bestheroz/mybatis-repository)](https://search.maven.org/artifact/io.github.bestheroz/mybatis-repository)
 
 ## 개요
