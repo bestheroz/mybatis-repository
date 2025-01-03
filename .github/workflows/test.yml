@@ -15,8 +15,8 @@ jobs:
           distribution: 'corretto'
           java-version: '11'
 
-      - name: build with Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@main
-        with:
-          gradle-version: wrapper
-          arguments: jar check --no-daemon
+
+      - name: Build with Gradle
+        run: /gradlew jar check --no-daemon

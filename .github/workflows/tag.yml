@@ -53,25 +53,27 @@ jobs:
           gpg --list-keys
           echo "default-key $SIGNING_KEY_ID" >> ~/.gnupg/gpg.conf
 
-      # 6. Maven Central에 배포
-      - name: Build and Publish
+      # 6. Gradle 설치
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@main
+
+      # 7. Maven Central에 배포
+      - name: Build with Gradle
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-        with:
-          gradle-version: wrapper
-          arguments: |
-            publishToMavenCentral 
-            --no-daemon 
-            -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} 
-            -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} 
-            -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} 
-            -Psigning.password=${{ env.SIGNING_PASSWORD }}
+        run: |
+          /gradlew
+          publishToMavenCentral 
+          --no-daemon 
+          -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} 
+          -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} 
+          -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} 
+          -Psigning.password=${{ env.SIGNING_PASSWORD }}
 
-      # 7. build.gradle 변경 사항 커밋
+      # 8. build.gradle 변경 사항 커밋
       - name: Commit Changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
