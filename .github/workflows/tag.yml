@@ -53,20 +53,22 @@ jobs:
           echo "default-key $SIGNING_KEY_ID" >> ~/.gnupg/gpg.conf
 
 
-      - name: build with Publish
+      - name: Build and Publish
         uses: gradle/gradle-build-action@main
-        with:
-          gradle-version: wrapper
-          arguments: publishToMavenCentral --no-daemon \
-            -PmavenCentralUsername="$MAVEN_USERNAME" \
-            -PmavenCentralPassword="$MAVEN_PASSWORD" \
-            -Psigning.keyId="$GPG_KEYID" \
-            -Psigning.password="$GPG_PASSPHRASE"
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_KEYID: ${{ secrets.SIGNING_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+        with:
+          gradle-version: wrapper
+          arguments: |
+            publishToMavenCentral 
+            --no-daemon 
+            -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} 
+            -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} 
+            -Psigning.keyId=${{ env.GPG_KEYID }} 
+            -Psigning.password=${{ env.GPG_PASSPHRASE }}
 
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
