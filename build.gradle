@@ -41,6 +41,8 @@ mavenPublishing {
 
     signAllPublications()
 
+    useInMemoryPgpKeys(System.getenv("GPG_PRIVATE_KEY"), System.getenv("SIGNING_PASSWORD"))
+
     coordinates(GROUP_ID, ARTIFACT_ID, VERSION)
 
     pom {
@@ -78,9 +80,4 @@ spotless {
         importOrder()
         googleJavaFormat()
     }
-}
-
-signing {
-    useInMemoryPgpKeys(System.getenv("GPG_PRIVATE_KEY"), System.getenv("SIGNING_PASSWORD"))
-    sign(publishing.publications)
 }
