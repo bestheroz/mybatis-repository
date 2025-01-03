@@ -65,7 +65,7 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          /gradlew
+          ./gradlew
           publishToMavenCentral 
           --no-daemon 
           -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} 

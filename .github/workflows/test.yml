@@ -19,4 +19,4 @@ jobs:
         uses: gradle/actions/setup-gradle@main
 
       - name: Build with Gradle
-        run: /gradlew jar check --no-daemon
+        run: ./gradlew jar check --no-daemon
