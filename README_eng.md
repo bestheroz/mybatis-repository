@@ -102,8 +102,8 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserDto.Response getUser(Long id) {
         return userRepository.getItemById(id)
-                .map(UserDto.Response::of)
-                .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
+            .map(UserDto.Response::of)
+            .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
     }
 
     public UserDto.Response createUser(final UserCreateDto.Request request, Operator operator) {
@@ -418,6 +418,111 @@ deleteByMap(Map.of("removedFlag", true));
 deleteById(1L);
 // SQL: DELETE FROM users WHERE id = 1;
 ```
+
+#### 9. Condition Types
+
+The `MybatisRepository` supports various condition types to build flexible and dynamic queries. Below are the supported condition types along with examples and the corresponding SQL generated.
+
+- **Equality and Inequality**
+
+  ```java
+  // Equal to
+  Map<String, Object> conditions = Map.of("name", "John");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE name = 'John';
+  
+  // Not equal to
+  Map<String, Object> conditions = Map.of("name:not", "John");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE name <> 'John';
+  ```
+
+- **IN and NOT IN**
+
+  ```java
+  // In
+  Map<String, Object> conditions = Map.of("id:in", Set.of(1L, 2L, 3L));
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE id IN (1, 2, 3);
+  
+  // Not In
+  Map<String, Object> conditions = Map.of("id:notIn", Set.of(1L, 2L, 3L));
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE id NOT IN (1, 2, 3);
+  ```
+
+- **NULL and NOT NULL**
+
+  ```java
+  // Is NULL
+  Map<String, Object> conditions = Map.of("deletedAt:null", null);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE deleted_at IS NULL;
+  
+  // Is NOT NULL
+  Map<String, Object> conditions = Map.of("deletedAt:notNull", null);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE deleted_at IS NOT NULL;
+  ```
+
+- **String Operations**
+
+  ```java
+  // Contains (substring)
+  Map<String, Object> conditions = Map.of("description:contains", "admin");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') > 0;
+  
+  // Does Not Contain (substring)
+  Map<String, Object> conditions = Map.of("description:notContains", "admin");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') = 0;
+  
+  // Starts With
+  Map<String, Object> conditions = Map.of("username:startsWith", "john");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`username`, 'john') = 1;
+  
+  // Ends With
+  Map<String, Object> conditions = Map.of("username:endsWith", "doe");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE RIGHT(`username`, CHAR_LENGTH('doe')) = 'doe';
+  ```
+
+- **Comparison Operators**
+
+  ```java
+  // Less Than
+  Map<String, Object> conditions = Map.of("age:lt", 30);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age < 30;
+  
+  // Less Than or Equal To
+  Map<String, Object> conditions = Map.of("age:lte", 30);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age <= 30;
+  
+  // Greater Than
+  Map<String, Object> conditions = Map.of("age:gt", 20);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age > 20;
+  
+  // Greater Than or Equal To
+  Map<String, Object> conditions = Map.of("age:gte", 20);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age >= 20;
+  ```
+
+- **Default Equality**
+
+  If no condition type is specified, the default is equality (`eq`).
+
+  ```java
+  // Equal to (default)
+  Map<String, Object> conditions = Map.of("email", "bestheroz@gmail.com");
+  getItemByMap(conditions);
+  // SQL: SELECT * FROM users WHERE email = 'bestheroz@gmail.com';
+  ```
 
 **Notes:**
 1. The keys in the `Map` should be written in camelCase (automatically converted to snake_case).

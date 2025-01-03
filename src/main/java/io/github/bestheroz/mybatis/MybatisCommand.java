@@ -28,6 +28,8 @@ public class MybatisCommand {
   public static final String UPDATE_MAP_BY_MAP = "updateMapByMap";
   public static final String DELETE_BY_MAP = "deleteByMap";
 
+  private static final String SEPARATOR = ":";
+
   public MybatisCommand() {}
 
   private static final Set<String> METHOD_LIST =
@@ -400,8 +402,8 @@ public class MybatisCommand {
     for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
       String key = entry.getKey();
       Object value = entry.getValue();
-      String columnName = substringBefore(key, ":");
-      String conditionType = substringAfter(key, ":");
+      String columnName = substringBefore(key);
+      String conditionType = substringAfter(key);
       if (conditionType.isEmpty()) {
         conditionType = "eq";
       }
@@ -481,7 +483,7 @@ public class MybatisCommand {
   // Helper methods to replace StringUtils
 
   private static String substringBetween(String str, String open, String close) {
-    if (str == null || open == null || close == null) {
+    if (str == null) {
       return null;
     }
     int start = str.indexOf(open);
@@ -495,26 +497,26 @@ public class MybatisCommand {
     return null;
   }
 
-  private static String substringBefore(String str, String separator) {
-    if (str == null || separator == null) {
-      return str;
+  private static String substringBefore(String str) {
+    if (str == null) {
+      return "";
     }
-    int pos = str.indexOf(separator);
+    int pos = str.indexOf(SEPARATOR);
     if (pos == -1) {
       return str;
     }
     return str.substring(0, pos);
   }
 
-  private static String substringAfter(String str, String separator) {
-    if (str == null || separator == null) {
+  private static String substringAfter(String str) {
+    if (str == null) {
       return "";
     }
-    int pos = str.indexOf(separator);
+    int pos = str.indexOf(SEPARATOR);
     if (pos == -1) {
       return "";
     }
-    return str.substring(pos + separator.length());
+    return str.substring(pos + SEPARATOR.length());
   }
 
   private static String defaultString(String str, String defaultStr) {

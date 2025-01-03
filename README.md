@@ -3,10 +3,6 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.bestheroz/mybatis-repository)](https://search.maven.org/artifact/io.github.bestheroz/mybatis-repository)
 
-## 영어 버전
-
-[README - English Version](https://github.com/bestheroz/mybatis-repository/blob/main/README_eng.md)
-
 ## 개요
 
 **MyBatis Repository**는 MyBatis를 통해 간단한 CRUD(생성, 조회, 업데이트, 삭제) SQL 작업을 자동으로 생성하고 실행할 수 있도록 도와주는 자바 라이브러리입니다. 사전에 정의된 함수를 호출함으로써 개발자는 보일러플레이트 코드를 크게 줄이고 생산성을 향상시킬 수 있습니다.
@@ -26,7 +22,7 @@
 - **Spring Boot**: 2.x 이상
 - **MyBatis Spring Boot Starter**: 2.x 이상
 - **Jakarta Persistence API**: 2.x 이상
-- (추가지원)**Kotlin**: 1.x 이상
+- (추가지원) **Kotlin**: 1.x 이상
 
 ## 설치 방법
 
@@ -96,14 +92,14 @@ public class UserService {
                 List.of("-id"),
                 request.getPageSize(),
                 (request.getPage() - 1) * request.getPageSize());
-        /// 추가적인 작업...
+        // 추가적인 작업...
     }
 
     @Transactional(readOnly = true)
     public UserDto.Response getUser(Long id) {
         return userRepository.getItemById(id)
-                .map(UserDto.Response::of)
-                .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
+            .map(UserDto.Response::of)
+            .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
     }
 
     public UserDto.Response createUser(final UserCreateDto.Request request, Operator operator) {
@@ -114,7 +110,7 @@ public class UserService {
         }
         User user = request.toEntity(operator);
         this.userRepository.insert(user);
-        /// 추가적인 작업...
+        // 추가적인 작업...
     }
 
     public UserDto.Response updateUser(
@@ -139,7 +135,7 @@ public class UserService {
                 request.getAuthorities(),
                 operator);
         this.userRepository.updateById(user, user.getId());
-        /// 추가적인 작업...
+        // 추가적인 작업...
     }
 
     public void deleteUser(final Long id, Operator operator) {
@@ -153,7 +149,7 @@ public class UserService {
         }
         user.remove(operator);
         this.userRepository.updateById(user, user.getId());
-        /// 추가적인 작업...
+        // 추가적인 작업...
     }
 
     // 추가적인 CRUD 메서드...
@@ -162,7 +158,8 @@ public class UserService {
 
 ### 사용 가능한 리포지토리 메서드
 
-### 1. 기본 조회 메서드
+#### 1. 기본 조회 메서드
+
 ```java
 // getItems()
 getItems();
@@ -205,7 +202,8 @@ getItemsByMapOrderByLimitOffset(
 // SQL: SELECT * FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 2. DISTINCT 메서드
+#### 2. DISTINCT 메서드
+
 ```java
 // getDistinctItems(Set<String>)
 getDistinctItems(Set.of("name", "loginId"));
@@ -266,7 +264,8 @@ getDistinctItemsByMapOrderByLimitOffset(
 // SQL: SELECT DISTINCT name, login_id FROM users WHERE use_flag = true ORDER BY name ASC, login_id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 3. Target 컬럼 메서드
+#### 3. Target 컬럼 메서드
+
 ```java
 // getTargetItems(Set<String>)
 getTargetItems(Set.of("id", "name"));
@@ -327,7 +326,8 @@ getTargetItemsByMapOrderByLimitOffset(
 // SQL: SELECT id, name FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 4. 단일 아이템 조회
+#### 4. 단일 아이템 조회
+
 ```java
 // getItemByMap(Map)
 getItemByMap(Map.of(
@@ -341,7 +341,8 @@ getItemById(1L);
 // SQL: SELECT * FROM users WHERE id = 1;
 ```
 
-### 5. 카운트 메서드
+#### 5. 카운트 메서드
+
 ```java
 // countAll()
 countAll();
@@ -352,7 +353,8 @@ countByMap(Map.of("removedFlag", false));
 // SQL: SELECT COUNT(*) FROM users WHERE removed_flag = false;
 ```
 
-### 6. 삽입 메서드
+#### 6. 삽입 메서드
+
 ```java
 // insert(T)
 User user = User.of(
@@ -372,7 +374,8 @@ insertBatch(users);
 // SQL: INSERT INTO users (...) VALUES (...), (...), (...);
 ```
 
-### 7. 업데이트 메서드
+#### 7. 업데이트 메서드
+
 ```java
 // updateById(T, Long)
 updateById(user, 1L);
@@ -400,7 +403,8 @@ updateMapById(
 // SQL: UPDATE users SET use_flag = false WHERE id = 1;
 ```
 
-### 8. 삭제 메서드
+#### 8. 삭제 메서드
+
 ```java
 // deleteByMap(Map)
 deleteByMap(Map.of("removedFlag", true));
@@ -411,11 +415,116 @@ deleteById(1L);
 // SQL: DELETE FROM users WHERE id = 1;
 ```
 
-주의사항:
-1. Map의 key는 카멜케이스로 작성 (자동으로 스네이크케이스로 변환)
-2. 정렬조건은 컬럼명만 입력시 ASC, `-`를 붙이면 DESC
-3. null 전달시 빈 컬렉션으로 처리
-4. 잘못된 컬럼명이나 형식 전달시 SQL 예외 발생
+#### 9. 조건 타입 (Condition Types)
+
+`MybatisRepository`는 다양한 조건 타입을 지원하여 유연하고 동적인 쿼리를 구축할 수 있습니다. 아래는 지원되는 조건 타입과 예제, 해당 SQL 문입니다.
+
+- **동등성 및 부등등성 (Equality and Inequality)**
+
+  ```java
+  // 동등 조건
+  Map<String, Object> conditions = Map.of("name", "John");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE name = 'John';
+
+  // 부등 조건
+  Map<String, Object> conditions = Map.of("name:not", "John");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE name <> 'John';
+  ```
+
+- **IN 및 NOT IN**
+
+  ```java
+  // IN 조건
+  Map<String, Object> conditions = Map.of("id:in", Set.of(1L, 2L, 3L));
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE id IN (1, 2, 3);
+
+  // NOT IN 조건
+  Map<String, Object> conditions = Map.of("id:notIn", Set.of(1L, 2L, 3L));
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE id NOT IN (1, 2, 3);
+  ```
+
+- **NULL 및 NOT NULL**
+
+  ```java
+  // IS NULL 조건
+  Map<String, Object> conditions = Map.of("deletedAt:null", null);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE deleted_at IS NULL;
+
+  // IS NOT NULL 조건
+  Map<String, Object> conditions = Map.of("deletedAt:notNull", null);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE deleted_at IS NOT NULL;
+  ```
+
+- **문자열 연산 (String Operations)**
+
+  ```java
+  // 포함 (substring)
+  Map<String, Object> conditions = Map.of("description:contains", "admin");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') > 0;
+
+  // 포함하지 않음 (substring)
+  Map<String, Object> conditions = Map.of("description:notContains", "admin");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') = 0;
+
+  // 시작 (startsWith)
+  Map<String, Object> conditions = Map.of("username:startsWith", "john");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE INSTR(`username`, 'john') = 1;
+
+  // 끝 (endsWith)
+  Map<String, Object> conditions = Map.of("username:endsWith", "doe");
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE RIGHT(`username`, CHAR_LENGTH('doe')) = 'doe';
+  ```
+
+- **비교 연산자 (Comparison Operators)**
+
+  ```java
+  // 미만 (Less Than)
+  Map<String, Object> conditions = Map.of("age:lt", 30);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age < 30;
+
+  // 이하 (Less Than or Equal To)
+  Map<String, Object> conditions = Map.of("age:lte", 30);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age <= 30;
+
+  // 초과 (Greater Than)
+  Map<String, Object> conditions = Map.of("age:gt", 20);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age > 20;
+
+  // 이상 (Greater Than or Equal To)
+  Map<String, Object> conditions = Map.of("age:gte", 20);
+  getItemsByMap(conditions);
+  // SQL: SELECT * FROM users WHERE age >= 20;
+  ```
+
+- **기본 동등성 (Default Equality)**
+
+  조건 타입이 지정되지 않은 경우 기본적으로 동등 조건 (`eq`)이 적용됩니다.
+
+  ```java
+  // 동등 조건 (기본)
+  Map<String, Object> conditions = Map.of("email", "bestheroz@gmail.com");
+  getItemByMap(conditions);
+  // SQL: SELECT * FROM users WHERE email = 'bestheroz@gmail.com';
+  ```
+
+**주의사항:**
+1. `Map`의 key는 카멜케이스로 작성되어야 하며, 자동으로 스네이크케이스로 변환됩니다.
+2. 정렬 조건에서 컬럼명만 입력할 경우 기본적으로 오름차순(`ASC`)으로 정렬되며, `-`를 접두사로 붙이면 내림차순(`DESC`)으로 정렬됩니다.
+3. `null`을 전달할 경우 빈 컬렉션으로 처리됩니다.
+4. 잘못된 컬럼명이나 형식을 전달할 경우 SQL 예외가 발생합니다.
 
 ## 예제
 
