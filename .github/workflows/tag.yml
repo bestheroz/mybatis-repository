@@ -28,13 +28,6 @@ jobs:
         run: |
           sed -i "s/VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/VERSION = '${{ env.VERSION }}'/g" build.gradle
 
-      - uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: ⬆️Update version to ${{ env.VERSION }}
-          branch: main
-          file_pattern: build.gradle
-          commit_author: joony.kim <bestheroz@users.noreply.github.com>
-
       - name: Set up JDK 11
         uses: actions/setup-java@main
         with:
@@ -75,3 +68,10 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_KEYID: ${{ secrets.SIGNING_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: ⬆️Update version to ${{ env.VERSION }}
+          branch: main
+          file_pattern: build.gradle
+          commit_author: joony.kim <bestheroz@users.noreply.github.com>
