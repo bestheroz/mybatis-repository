@@ -40,4 +40,4 @@ build/
 .idea
 .m2
 gradle.properties
-.graldle/
+.gradle/
