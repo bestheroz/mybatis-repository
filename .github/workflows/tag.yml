@@ -40,18 +40,29 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          GPG_KEYID: ${{ secrets.SIGNING_KEY_ID }}
         run: |
-          echo "$GPG_PRIVATE_KEY" > private.key
+          # GPG 키 임포트
+          echo "$GPG_PRIVATE_KEY" | base64 -d > private.key
           gpg --batch --import private.key
-          rm private.key
+          
+          # secring.gpg 생성
+          gpg --export-secret-keys --pinentry-mode loopback --passphrase "$SIGNING_PASSWORD" > secring.gpg
+          
+          # GPG 설정
           echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf
           echo "keyid-format 0xlong" >> ~/.gnupg/gpg.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          echo RELOADAGENT | gpg-connect-agent
-          gpg --list-keys
-          # Optionally set the default key
-          echo "default-key $SIGNING_KEY_ID" >> ~/.gnupg/gpg.conf
-
+          echo "default-key $GPG_KEYID" >> ~/.gnupg/gpg.conf
+          
+          # 키 확인
+          gpg --list-secret-keys
+          
+          # 파일 정리
+          rm private.key
+          
+          # secring.gpg 파일 위치 확인
+          ls -la secring.gpg
 
       - name: Build and Publish
         uses: gradle/gradle-build-action@main
@@ -69,6 +80,7 @@ jobs:
             -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} 
             -Psigning.keyId=${{ env.GPG_KEYID }} 
             -Psigning.password=${{ env.GPG_PASSPHRASE }}
+            -Psigning.secretKeyRingFile=secring.gpg
 
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
