@@ -79,7 +79,6 @@ jobs:
           branch: main
           file_pattern: build.gradle
           commit_author: "joony.kim <bestheroz@users.noreply.github.com>"
-          repository: ${{ github.repository }}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_GITHUB_TOKEN }}
           VERSION: ${{ env.VERSION }}
