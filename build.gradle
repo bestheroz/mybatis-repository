@@ -9,7 +9,7 @@ plugins {
 ext {
     GROUP_ID = 'io.github.bestheroz'
     ARTIFACT_ID = 'mybatis-repository'
-    VERSION = '0.1.1'
+    VERSION = '0.2.3'
     DESCRIPTION = "MyBatis Repository's Interface"
     GITHUB_URL = "https://github.com/bestheroz/mybatis-repository"
 }
