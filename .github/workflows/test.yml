@@ -18,8 +18,4 @@ jobs:
           gradle-version: wrapper
           arguments: jar --no-daemon
 
-      - name: spotless with Gradle
-        uses: gradle/gradle-build-action@main
-        with:
-          gradle-version: wrapper
-          arguments: check --no-daemon
+      - run: ./gradlew check
