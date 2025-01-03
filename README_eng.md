@@ -3,34 +3,34 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.bestheroz/mybatis-repository)](https://search.maven.org/artifact/io.github.bestheroz/mybatis-repository)
 
-## 영어 버전
+## Korean Version
 
-[README - English Version](https://github.com/bestheroz/mybatis-repository/blob/main/README_eng.md)
+[README - Korean Version](https://github.com/bestheroz/mybatis-repository/blob/main/README_ko.md)
 
-## 개요
+## Overview
 
-**MyBatis Repository**는 MyBatis를 통해 간단한 CRUD(생성, 조회, 업데이트, 삭제) SQL 작업을 자동으로 생성하고 실행할 수 있도록 도와주는 자바 라이브러리입니다. 사전에 정의된 함수를 호출함으로써 개발자는 보일러플레이트 코드를 크게 줄이고 생산성을 향상시킬 수 있습니다.
+**MyBatis Repository** is a Java library that simplifies CRUD (Create, Read, Update, Delete) SQL operations by automatically generating and executing SQL statements through MyBatis. By calling predefined functions, developers can significantly reduce boilerplate code and enhance productivity.
 
-## 주요 기능
+## Key Features
 
-- **제네릭 리포지토리 인터페이스**: 제네릭 CRUD 작업을 위한 `MybatisRepository<T>` 인터페이스 제공.
-- **동적 SQL 생성**: `MybatisCommand`를 사용하여 입력 파라미터 기반으로 동적으로 SQL 쿼리 빌드.
-- **유연한 쿼리 메서드**: 필터링, 정렬, 중복 선택, 페이징 등의 옵션을 지원하는 다양한 쿼리 메서드 제공.
-- **배치 작업 지원**: 다수의 엔티티를 한 번에 삽입할 수 있는 배치 삽입 기능.
-- **구성 옵션**: 구성 파일을 통해 특정 필드를 SQL 작업에서 제외할 수 있음.
-- **Spring Boot와의 통합**: Spring Boot 애플리케이션과 원활하게 통합.
+- **Generic Repository Interface**: Provides the `MybatisRepository<T>` interface for generic CRUD operations.
+- **Dynamic SQL Generation**: Utilizes `MybatisCommand` to dynamically build SQL queries based on input parameters.
+- **Flexible Query Methods**: Offers a variety of query methods supporting filtering, sorting, distinct selection, and pagination options.
+- **Batch Operations Support**: Includes batch insertion capabilities for inserting multiple entities at once.
+- **Configuration Options**: Allows exclusion of specific fields from SQL operations through configuration files.
+- **Spring Boot Integration**: Seamlessly integrates with Spring Boot applications.
 
-## 요구 사항
+## Requirements
 
-- **Java**: 1.8 이상
-- **Spring Boot**: 2.x 이상
-- **MyBatis Spring Boot Starter**: 2.x 이상
-- **Jakarta Persistence API**: 2.x 이상
-- (추가지원)**Kotlin**: 1.x 이상
+- **Java**: 1.8 or higher
+- **Spring Boot**: 2.x or higher
+- **MyBatis Spring Boot Starter**: 2.x or higher
+- **Jakarta Persistence API**: 2.x or higher
+- *(Optional)* **Kotlin**: 1.x or higher
 
-## 설치 방법
+## Installation
 
-`build.gradle`에 다음 의존성을 추가하세요:
+Add the following dependency to your `build.gradle`:
 
 ```groovy
 dependencies {
@@ -38,7 +38,7 @@ dependencies {
 }
 ```
 
-또는 `pom.xml`에 다음 의존성을 추가하세요:
+Or add the following dependency to your `pom.xml`:
 
 ```xml
 <dependency>
@@ -48,11 +48,11 @@ dependencies {
 </dependency>
 ```
 
-## 구성 방법
+## Configuration
 
 ### `application.yml`
 
-SQL 작업에서 특정 필드를 제외하도록 리포지토리를 구성합니다:
+Configure the repository to exclude specific fields from SQL operations:
 
 ```yaml
 mybatis-repository:
@@ -64,11 +64,11 @@ mybatis-repository:
     - Companion(with kotlin)
 ```
 
-## 사용 방법
+## Usage
 
-### 리포지토리 정의
+### Define Repository
 
-엔티티에 대한 리포지토리 인터페이스를 `MybatisRepository<T>`를 확장하여 생성합니다.
+Create a repository interface for your entity by extending `MybatisRepository<T>`.
 
 ```java
 @Mapper
@@ -76,9 +76,9 @@ mybatis-repository:
 public interface UserRepository extends MybatisRepository<User> {}
 ```
 
-### 서비스 생성
+### Create Service
 
-서비스 계층에서 리포지토리를 활용하여 CRUD 작업을 수행합니다.
+Utilize the repository in the service layer to perform CRUD operations.
 
 ```java
 @Service
@@ -96,7 +96,7 @@ public class UserService {
                 List.of("-id"),
                 request.getPageSize(),
                 (request.getPage() - 1) * request.getPageSize());
-        /// 추가적인 작업...
+        // Additional operations...
     }
 
     @Transactional(readOnly = true)
@@ -114,7 +114,7 @@ public class UserService {
         }
         User user = request.toEntity(operator);
         this.userRepository.insert(user);
-        /// 추가적인 작업...
+        // Additional operations...
     }
 
     public UserDto.Response updateUser(
@@ -139,7 +139,7 @@ public class UserService {
                 request.getAuthorities(),
                 operator);
         this.userRepository.updateById(user, user.getId());
-        /// 추가적인 작업...
+        // Additional operations...
     }
 
     public void deleteUser(final Long id, Operator operator) {
@@ -153,16 +153,17 @@ public class UserService {
         }
         user.remove(operator);
         this.userRepository.updateById(user, user.getId());
-        /// 추가적인 작업...
+        // Additional operations...
     }
 
-    // 추가적인 CRUD 메서드...
+    // Additional CRUD methods...
 }
 ```
 
-### 사용 가능한 리포지토리 메서드
+### Available Repository Methods
 
-### 1. 기본 조회 메서드
+#### 1. Basic Query Methods
+
 ```java
 // getItems()
 getItems();
@@ -205,7 +206,8 @@ getItemsByMapOrderByLimitOffset(
 // SQL: SELECT * FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 2. DISTINCT 메서드
+#### 2. DISTINCT Methods
+
 ```java
 // getDistinctItems(Set<String>)
 getDistinctItems(Set.of("name", "loginId"));
@@ -266,7 +268,8 @@ getDistinctItemsByMapOrderByLimitOffset(
 // SQL: SELECT DISTINCT name, login_id FROM users WHERE use_flag = true ORDER BY name ASC, login_id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 3. Target 컬럼 메서드
+#### 3. Target Column Methods
+
 ```java
 // getTargetItems(Set<String>)
 getTargetItems(Set.of("id", "name"));
@@ -327,7 +330,8 @@ getTargetItemsByMapOrderByLimitOffset(
 // SQL: SELECT id, name FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
 ```
 
-### 4. 단일 아이템 조회
+#### 4. Single Item Query
+
 ```java
 // getItemByMap(Map)
 getItemByMap(Map.of(
@@ -341,7 +345,8 @@ getItemById(1L);
 // SQL: SELECT * FROM users WHERE id = 1;
 ```
 
-### 5. 카운트 메서드
+#### 5. Count Methods
+
 ```java
 // countAll()
 countAll();
@@ -352,13 +357,14 @@ countByMap(Map.of("removedFlag", false));
 // SQL: SELECT COUNT(*) FROM users WHERE removed_flag = false;
 ```
 
-### 6. 삽입 메서드
+#### 6. Insert Methods
+
 ```java
 // insert(T)
 User user = User.of(
     "developer",
     "password123",
-    "개발자",
+    "Developer",
     true,
     List.of(AuthorityEnum.NOTICE_VIEW),
     operator
@@ -372,7 +378,8 @@ insertBatch(users);
 // SQL: INSERT INTO users (...) VALUES (...), (...), (...);
 ```
 
-### 7. 업데이트 메서드
+#### 7. Update Methods
+
 ```java
 // updateById(T, Long)
 updateById(user, 1L);
@@ -400,7 +407,8 @@ updateMapById(
 // SQL: UPDATE users SET use_flag = false WHERE id = 1;
 ```
 
-### 8. 삭제 메서드
+#### 8. Delete Methods
+
 ```java
 // deleteByMap(Map)
 deleteByMap(Map.of("removedFlag", true));
@@ -411,15 +419,15 @@ deleteById(1L);
 // SQL: DELETE FROM users WHERE id = 1;
 ```
 
-주의사항:
-1. Map의 key는 카멜케이스로 작성 (자동으로 스네이크케이스로 변환)
-2. 정렬조건은 컬럼명만 입력시 ASC, `-`를 붙이면 DESC
-3. null 전달시 빈 컬렉션으로 처리
-4. 잘못된 컬럼명이나 형식 전달시 SQL 예외 발생
+**Notes:**
+1. The keys in the `Map` should be written in camelCase (automatically converted to snake_case).
+2. For sorting conditions, providing only the column name defaults to ascending order; prefixing with `-` indicates descending order.
+3. Passing `null` is treated as an empty collection.
+4. Providing incorrect column names or formats will result in SQL exceptions.
 
-## 예제
+## Example
 
-### 엔티티 정의
+### Define Entity
 
 ```java
 package com.github.bestheroz.demo.domain;
@@ -436,11 +444,11 @@ public class User {
     private String name;
     private Boolean useFlag;
     private Boolean removedFlag;
-    // 추가 필드 및 메서드...
+    // Additional fields and methods...
 }
 ```
 
-### 리포지토리 생성
+### Create Repository
 
 ```java
 package com.github.bestheroz.demo.repository;
@@ -455,7 +463,7 @@ import org.springframework.stereotype.Repository;
 public interface UserRepository extends MybatisRepository<User> {}
 ```
 
-### 서비스 구현
+### Implement Service
 
 ```java
 package com.github.bestheroz.demo.services;
@@ -480,18 +488,18 @@ public class UserService {
             .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
     }
 
-    // 추가적인 서비스 메서드...
+    // Additional service methods...
 }
 ```
 
-## 기여 방법
+## How to Contribute
 
-기여를 환영합니다! 저장소를 포크한 후 개선 사항이나 버그 수정을 위한 풀 리퀘스트를 제출해주세요.
+Contributions are welcome! Please fork the repository and submit a pull request with your improvements or bug fixes.
 
-## 라이선스
+## License
 
-이 프로젝트는 [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) 하에 라이선스가 부여되었습니다.
+This project is licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0.txt).
 
 ---
 
-*❤️로 개발된 프로젝트 by [bestheroz](https://github.com/bestheroz)*
+*❤️ Developed with love by [bestheroz](https://github.com/bestheroz)*
