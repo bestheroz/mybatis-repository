@@ -6,9 +6,18 @@ plugins {
     id "com.diffplug.spotless" version "5.17.1"
 }
 
-group = 'io.github.bestheroz'
-version = '0.0.1'
-description = "MyBatis Repository's Interface"
+ext {
+    GROUP_ID = 'io.github.bestheroz'
+    ARTIFACT_ID = 'mybatis-repository'
+    VERSION = '0.1.0'
+    DESCRIPTION = "MyBatis Repository's Interface"
+    GITHUB_URL = "https://github.com/bestheroz/mybatis-repository"
+}
+
+group = GROUP_ID
+version = VERSION
+description = DESCRIPTION
+
 java {
     sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
@@ -31,17 +40,14 @@ mavenPublishing {
 
     signAllPublications()
 
-    // 프로젝트의 그룹 ID, 아티팩트 ID, 버전 설정
-    coordinates("io.github.bestheroz", "mybatis-repository", "0.0.1")
+    coordinates(GROUP_ID, ARTIFACT_ID, VERSION)
 
-    // POM 정보 설정
     pom {
-        name.set("Mybatis Repository")  // 프로젝트 이름
-        description.set("MyBatis Repository's Interface")  // 프로젝트 설명
-        url.set("https://github.com/bestheroz/mybatis-repository")  // 프로젝트 URL
-        inceptionYear.set("2024")  // 프로젝트 시작 연도
+        name.set(ARTIFACT_ID)
+        description.set(DESCRIPTION)
+        url.set(GITHUB_URL)
+        inceptionYear.set("2025")
 
-        // 라이선스 정보 설정
         licenses {
             license {
                 name.set("The Apache License, Version 2.0")
@@ -50,33 +56,25 @@ mavenPublishing {
             }
         }
 
-        // 개발자 정보 설정
         developers {
             developer {
-                id.set("bestheroz")  // 개발자 ID
-                name.set("Joony.Kim")  // 개발자 이름
-                url.set("https://github.com/bestheroz")  // 개발자 URL
+                id.set("bestheroz")
+                name.set("joony.kim")
+                url.set("https://github.com/bestheroz")
             }
         }
 
-        // 소스 코드 관리(SCM) 정보 설정
         scm {
-            url.set("https://github.com/bestheroz/mybatis-repository")  // SCM URL
-            connection.set("scm:git:git://github.com/bestheroz/mybatis-repository.git")
-            developerConnection.set("scm:git:ssh://git@github.com:bestheroz/mybatis-repository.git")
+            url.set(GITHUB_URL)
+            connection.set("scm:git:git://${GITHUB_URL}.git")
+            developerConnection.set("scm:git:ssh://git@github.com:bestheroz/${ARTIFACT_ID}.git")
         }
     }
 }
 
-
 spotless {
     java {
         importOrder()
-
-//        cleanthat()          // has its own section below
-
-        googleJavaFormat()   // has its own section below
-
-//        formatAnnotations()  // fixes formatting of type annotations, see below
+        googleJavaFormat()
     }
 }
