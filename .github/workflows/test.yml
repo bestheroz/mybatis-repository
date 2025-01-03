@@ -16,6 +16,4 @@ jobs:
         uses: gradle/gradle-build-action@main
         with:
           gradle-version: wrapper
-          arguments: jar
-
-      - run: ./gradlew check
+          arguments: jar check --no-daemon
