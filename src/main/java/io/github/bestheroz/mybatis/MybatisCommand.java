@@ -1,5 +1,6 @@
 package io.github.bestheroz.mybatis;
 
+import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import io.github.bestheroz.mybatis.type.ValueEnum;
 import jakarta.persistence.Table;
 import java.io.PrintWriter;
@@ -9,6 +10,7 @@ import java.text.SimpleDateFormat;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.ibatis.jdbc.SQL;
@@ -18,6 +20,9 @@ import org.springframework.lang.NonNull;
 
 public class MybatisCommand {
   private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
+
+  // 캐싱할 때 사용 (EntityClass -> Field[])
+  private static final Map<Class<?>, Field[]> FIELD_CACHE = new ConcurrentHashMap<>();
 
   public static final String SELECT_ITEMS = "getDistinctAndTargetItemsByMapOrderByLimitOffset";
   public static final String SELECT_ITEM_BY_MAP = "getItemByMap";
@@ -48,13 +53,11 @@ public class MybatisCommand {
    * @return entity class
    */
   private Class<?> getEntityClass() {
-    for (StackTraceElement element : new Throwable().getStackTrace()) {
-      if (isValidStackTraceElement(element)) {
-        return getClassFromStackTraceElement(element);
-      }
-    }
-    log.warn("stackTraceElements is Empty");
-    throw new RuntimeException("stackTraceElements is required");
+    return Arrays.stream(new Throwable().getStackTrace())
+        .filter(this::isValidStackTraceElement)
+        .findFirst()
+        .map(this::getClassFromStackTraceElement)
+        .orElseThrow(() -> new MybatisRepositoryException("stackTraceElements is required"));
   }
 
   /**
@@ -82,7 +85,7 @@ public class MybatisCommand {
       return Class.forName(className);
     } catch (ClassNotFoundException e) {
       log.warn(getStackTrace(e));
-      throw new RuntimeException("Failed::ClassNotFoundException", e);
+      throw new MybatisRepositoryException("Failed::ClassNotFoundException", e);
     }
   }
 
@@ -106,11 +109,9 @@ public class MybatisCommand {
   }
 
   /** Entity 의 모든 필드를 불러온 뒤, {@link MybatisProperties#getExcludeFields()} 에 없는 필드만 모아 반환한다. */
-  private <T> Set<String> getEntityFields(final Class<T> entity) {
-    return Stream.of(getAllFields(entity))
+  private <T> Set<String> getEntityFields(final Class<T> entityClass) {
+    return Stream.of(getAllNonExcludedFields(entityClass))
         .map(Field::getName)
-        .distinct()
-        .filter(fieldName -> !MybatisProperties.getExcludeFields().contains(fieldName))
         .collect(Collectors.toSet());
   }
 
@@ -123,7 +124,7 @@ public class MybatisCommand {
   private void verifyWhereKey(final Map<String, Object> whereConditions) {
     if (whereConditions == null || whereConditions.isEmpty()) {
       log.warn("whereConditions is empty");
-      throw new RuntimeException("'where' Conditions is required");
+      throw new MybatisRepositoryException("'where' Conditions is required");
     }
   }
 
@@ -131,7 +132,7 @@ public class MybatisCommand {
   public String countByMap(final Map<String, Object> whereConditions) {
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(this.getTableName());
     getWhereSql(sql, whereConditions);
-    log.debug(sql.toString());
+    log.debug("countByMap SQL: {}", sql);
     return sql.toString();
   }
 
@@ -178,7 +179,7 @@ public class MybatisCommand {
     // ORDER 절
     appendOrderByClause(sql, orderByConditions);
 
-    log.debug(sql.toString());
+    log.debug("getDistinctAndTargetItemsByMapOrderByLimitOffset SQL: {}", sql);
     return sql.toString();
   }
 
@@ -197,7 +198,7 @@ public class MybatisCommand {
       }
     }
 
-    log.debug(sql.toString());
+    log.debug("insert SQL: {}", sql);
     return sql.toString();
   }
 
@@ -205,7 +206,7 @@ public class MybatisCommand {
   public <T> String insertBatch(@NonNull final List<T> entities) {
     if (entities.isEmpty()) {
       log.warn("entities are empty");
-      throw new RuntimeException("entities empty");
+      throw new MybatisRepositoryException("entities empty");
     }
 
     SQL sql = new SQL();
@@ -217,11 +218,14 @@ public class MybatisCommand {
     Set<String> columns = getEntityFields(entityClass);
 
     // 필드명을 snake_case 로 변경한 뒤, exclude 필드가 아닌 것만 columns 로 구성
-    String columnsJoined =
+    List<String> columnList =
         columns.stream()
             .filter(col -> !MybatisProperties.getExcludeFields().contains(col))
-            .map(str -> wrapIdentifier(getCamelCaseToSnakeCase(str)))
-            .collect(Collectors.joining(", "));
+            .map(MybatisCommand::getCamelCaseToSnakeCase)
+            .collect(Collectors.toList());
+
+    String columnsJoined =
+        columnList.stream().map(this::wrapIdentifier).collect(Collectors.joining(", "));
     sql.INTO_COLUMNS(columnsJoined);
 
     // 각 row 데이터 생성
@@ -230,6 +234,7 @@ public class MybatisCommand {
       Map<String, Object> entityMap = toMap(entity);
       List<String> rowValueList = new ArrayList<>();
       for (String column : columns) {
+        // 컬럼 순서에 맞춰 값 추출 (String -> SQL value)
         rowValueList.add(getFormattedValue(entityMap.get(column)));
       }
       valuesList.add(rowValueList);
@@ -242,7 +247,7 @@ public class MybatisCommand {
             .collect(Collectors.joining("), ("));
     sql.INTO_VALUES(valuesJoined);
 
-    log.debug(sql.toString());
+    log.debug("insertBatch SQL: {}", sql);
     return sql.toString();
   }
 
@@ -263,7 +268,7 @@ public class MybatisCommand {
 
     getWhereSql(sql, whereConditions);
     requireWhereClause(sql);
-    log.debug(sql.toString());
+    log.debug("updateMapByMap SQL: {}", sql);
     return sql.toString();
   }
 
@@ -273,7 +278,7 @@ public class MybatisCommand {
     SQL sql = new SQL().DELETE_FROM(this.getTableName());
     getWhereSql(sql, whereConditions);
     requireWhereClause(sql);
-    log.debug(sql.toString());
+    log.debug("deleteByMap SQL: {}", sql);
     return sql.toString();
   }
 
@@ -281,7 +286,7 @@ public class MybatisCommand {
   private void requireWhereClause(final SQL sql) {
     if (!sql.toString().toLowerCase().contains("where ")) {
       log.warn("whereConditions are empty");
-      throw new RuntimeException("whereConditions are required");
+      throw new MybatisRepositoryException("whereConditions are required");
     }
   }
 
@@ -311,11 +316,12 @@ public class MybatisCommand {
   /** Order By 구문 구성 orderByConditions 의 원소가 '-' 로 시작하면 desc 정렬 */
   private void appendOrderByClause(SQL sql, List<String> orderByConditions) {
     for (String condition : orderByConditions) {
-      String column = getCamelCaseToSnakeCase(condition);
-      if (column.startsWith("-")) {
-        sql.ORDER_BY(wrapIdentifier(column.substring(1)) + " desc");
+      if (condition.startsWith("-")) {
+        // "-" 뒤 실제 컬럼명 추출
+        String realCol = condition.substring(1);
+        sql.ORDER_BY(wrapIdentifier(getCamelCaseToSnakeCase(realCol)) + " DESC");
       } else {
-        sql.ORDER_BY(wrapIdentifier(column));
+        sql.ORDER_BY(wrapIdentifier(getCamelCaseToSnakeCase(condition)) + " ASC");
       }
     }
   }
@@ -338,8 +344,8 @@ public class MybatisCommand {
       }
 
       // columnName 은 camelCase -> snakeCase 변환
-      String whereClause =
-          getWhereString(conditionType, getCamelCaseToSnakeCase(columnName), value);
+      String dbColumnName = getCamelCaseToSnakeCase(columnName);
+      String whereClause = getWhereString(conditionType, dbColumnName, value);
       sql.WHERE(whereClause);
     }
   }
@@ -387,7 +393,7 @@ public class MybatisCommand {
   private String buildInClause(String dbColumnName, Object value, boolean isNotIn) {
     if (!(value instanceof Set)) {
       log.warn("conditionType '{}' requires Set", (isNotIn ? "notIn" : "in"));
-      throw new RuntimeException(
+      throw new MybatisRepositoryException(
           String.format(
               "conditionType '%s' requires Set, yours: %s",
               (isNotIn ? "notIn" : "in"), value.getClass()));
@@ -395,8 +401,8 @@ public class MybatisCommand {
 
     Set<?> inValues = (Set<?>) value;
     if (inValues.isEmpty()) {
-      log.warn("WHERE - empty in cause : {}", dbColumnName);
-      throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
+      log.warn("WHERE - empty in clause : {}", dbColumnName);
+      throw new MybatisRepositoryException("WHERE - empty in clause : " + dbColumnName);
     }
 
     String inFormatted =
@@ -411,12 +417,13 @@ public class MybatisCommand {
 
   /**
    * DB에 들어갈 값으로 변환 - 문자열은 quote - date/time 은 지정된 포맷으로 - Enum 은 ValueEnum.getValue() 또는 name() -
-   * list, set, map 은 JSON 형태 등 - 그 외엔 toString()
+   * List, Set, Map 은 JSON 형태 등 - 그 외엔 toString()
    */
   private String getFormattedValue(final Object value) {
     if (value == null) {
       return "null";
     }
+    // 단순 캐싱 or 메서드 분기
     if (value instanceof String) {
       return formatStringValue((String) value);
     }
@@ -438,18 +445,14 @@ public class MybatisCommand {
     if (value instanceof Enum<?>) {
       return formatEnumValue((Enum<?>) value);
     }
-    if (value instanceof List<?>) {
-      return formatListValue((List<?>) value);
-    }
-    if (value instanceof Set<?>) {
-      return formatSetValue((Set<?>) value);
+    if (value instanceof Collection<?>) {
+      return formatCollectionValue((Collection<?>) value);
     }
     if (value instanceof Map<?, ?>) {
       return formatMapValue((Map<?, ?>) value);
     }
-
     // 기본 (숫자, boolean 등)
-    return value.toString().replace("'", "''");
+    return escapeSingleQuote(value.toString());
   }
 
   private String formatStringValue(String str) {
@@ -457,7 +460,7 @@ public class MybatisCommand {
       return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
     }
     // 일반 문자열
-    return "'" + str.replace("'", "''") + "'";
+    return "'" + escapeSingleQuote(str) + "'";
   }
 
   private String formatInstantValue(Instant instant) {
@@ -489,17 +492,12 @@ public class MybatisCommand {
     return "'" + enumValue.name() + "'";
   }
 
-  private String formatListValue(List<?> list) {
-    String listStr =
-        list.stream()
+  private String formatCollectionValue(Collection<?> collection) {
+    String joined =
+        collection.stream()
             .map(v -> getFormattedValue(v).replace("'", "\""))
             .collect(Collectors.joining(", "));
-    return "'[" + listStr + "]'";
-  }
-
-  private String formatSetValue(Set<?> set) {
-    String setStr = set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
-    return "'[" + setStr + "]'";
+    return "'[" + joined + "]'";
   }
 
   private String formatMapValue(Map<?, ?> map) {
@@ -511,11 +509,17 @@ public class MybatisCommand {
       }
       first = false;
       sb.append("\"")
-          .append(entry.getKey())
+          .append(escapeSingleQuote(String.valueOf(entry.getKey())))
           .append("\":")
           .append(getFormattedValue(entry.getValue()));
     }
-    return sb.append("}\"").toString();
+    sb.append("}\"");
+    return sb.toString();
+  }
+
+  private String escapeSingleQuote(String src) {
+    // 단일 인용부호를 이스케이프
+    return src.replace("'", "''");
   }
 
   /** Instant -> String 변환 (UTC 기준) */
@@ -560,7 +564,7 @@ public class MybatisCommand {
   /** 엔티티 객체 -> Map 변환 */
   public static Map<String, Object> toMap(final Object source) {
     final Map<String, Object> map = new HashMap<>();
-    final Field[] fields = getAllFields(source.getClass());
+    final Field[] fields = getAllNonExcludedFields(source.getClass());
     for (final Field field : fields) {
       field.setAccessible(true);
       try {
@@ -572,16 +576,26 @@ public class MybatisCommand {
     return map;
   }
 
-  /** 클래스 및 부모 클래스의 모든 필드를 얻는다. */
-  private static Field[] getAllFields(Class<?> clazz) {
-    List<Field> fields = new ArrayList<>();
+  /** 클래스 및 부모 클래스의 모든 필드를 얻는다(캐싱 사용). */
+  private static Field[] getAllNonExcludedFields(Class<?> clazz) {
+    if (FIELD_CACHE.containsKey(clazz)) {
+      return FIELD_CACHE.get(clazz);
+    }
 
+    List<Field> allFields = new ArrayList<>();
     Class<?> currentClass = clazz;
     while (currentClass != null && currentClass != Object.class) {
-      fields.addAll(Arrays.asList(currentClass.getDeclaredFields()));
+      allFields.addAll(Arrays.asList(currentClass.getDeclaredFields()));
       currentClass = currentClass.getSuperclass();
     }
-    return fields.toArray(new Field[0]);
+
+    Field[] fieldArray =
+        allFields.stream()
+            .filter(field -> !MybatisProperties.getExcludeFields().contains(field.getName()))
+            .distinct()
+            .toArray(Field[]::new);
+    FIELD_CACHE.put(clazz, fieldArray);
+    return fieldArray;
   }
 
   /** 문자열의 특정 구간을 추출 (open, close 사이) */
@@ -626,6 +640,7 @@ public class MybatisCommand {
 
   /** 예외 스택트레이스를 문자열로 변환 */
   private static String getStackTrace(Throwable e) {
+    // 실제 운영에선 너무 자주 호출되지 않도록 주의
     StringWriter sw = new StringWriter();
     PrintWriter pw = new PrintWriter(sw);
     e.printStackTrace(pw);
