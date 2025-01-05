@@ -20,10 +20,7 @@ public class MybatisEntityHelper {
     this.stringHelper = stringHelper;
   }
 
-  // ===========================================
-  // Private Helpers - Table/Entity
-  // ===========================================
-  /** 현재 stacktrace 에서 유효한 element 를 찾아, 인터페이스의 제네릭으로 선언된 클래스 타입을 파싱해 반환. */
+  /** 현재 stacktrace 에서 유효한 element 를 찾아, 제네릭으로 선언된 클래스 타입을 파싱해 반환. */
   private Class<?> getEntityClass() {
     return Arrays.stream(new Throwable().getStackTrace())
         .filter(this::isValidStackTraceElement)
@@ -35,7 +32,7 @@ public class MybatisEntityHelper {
   private boolean isValidStackTraceElement(final StackTraceElement element) {
     try {
       Class<?> clazz = Class.forName(element.getClassName());
-      return MybatisCommand.METHOD_LIST.contains(element.getMethodName())
+      return METHOD_LIST.contains(element.getMethodName())
           && clazz.getInterfaces().length > 0
           && clazz.getInterfaces()[0].getGenericInterfaces().length > 0;
     } catch (ClassNotFoundException e) {
@@ -69,7 +66,7 @@ public class MybatisEntityHelper {
 
     Table tableAnnotation = entityClass.getAnnotation(Table.class);
     String tableName;
-    if (tableAnnotation != null) {
+    if (tableAnnotation != null && !tableAnnotation.name().isEmpty()) {
       tableName = tableAnnotation.name();
     } else {
       tableName = stringHelper.getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
@@ -79,9 +76,6 @@ public class MybatisEntityHelper {
     return tableName;
   }
 
-  // ===========================================
-  // Private Helpers - Field/Entity
-  // ===========================================
   protected Set<String> getEntityFields() {
     return getEntityFields(getEntityClass());
   }
@@ -114,6 +108,7 @@ public class MybatisEntityHelper {
   }
 
   protected String getColumnName(String fieldName) {
+    // 'userName' -> 'user_name'
     return COLUMN_NAME_CACHE.computeIfAbsent(fieldName, stringHelper::getCamelCaseToSnakeCase);
   }
 }

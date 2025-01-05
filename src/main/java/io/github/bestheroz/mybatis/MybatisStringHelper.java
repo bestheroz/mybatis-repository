@@ -65,7 +65,7 @@ public class MybatisStringHelper {
       if (c == 'T') countT++;
       if (c == '+') countPlus++;
     }
-    // 예시: 2023-01-02T12:34:56Z or 2023-01-02T12:34:56+09:00
+    // 예: 2023-01-02T12:34:56Z or 2023-01-02T12:34:56+09:00
     return countDash == 2
         && countColon == 2
         && countT == 1
@@ -99,6 +99,7 @@ public class MybatisStringHelper {
   }
 
   protected String wrapIdentifier(final String identifier) {
+    // DBMS마다 다를 수 있으나, 예시로 백틱(`)을 사용
     return "`" + identifier + "`";
   }
 }
