@@ -37,8 +37,8 @@ public class MybatisClauseBuilder {
     }
 
     for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
-      String key = entry.getKey();
-      Object value = entry.getValue();
+      final String key = entry.getKey();
+      final Object value = entry.getValue();
 
       // key를 ":" 기준으로 앞뒤로 잘라서 column/conditionType 구분
       String columnName = stringHelper.substringBefore(key);
@@ -47,22 +47,18 @@ public class MybatisClauseBuilder {
         conditionType = "eq"; // 기본 eq
       }
 
+      // DB Column
       String dbColumnName = entityHelper.getColumnName(columnName);
-      String clause = buildConditionClause(conditionType, dbColumnName, value);
-      sql.WHERE(clause);
-    }
-  }
 
-  /** conditionType(=, <>, IN, …)을 처리하고 실제 SQL 조건절을 반환 */
-  private String buildConditionClause(
-      final String conditionType, final String dbColumnName, final Object value) {
-    Condition condition = Condition.from(conditionType);
-    return condition.buildClause(dbColumnName, value, this);
+      // Condition 선택 후 빌드
+      sql.WHERE(Condition.from(conditionType).buildClause(dbColumnName, value, this));
+    }
   }
 
   /** SELECT 절을 구성한다. distinctColumns와 targetColumns 모두 비어 있으면 entity의 모든 필드를 SELECT. */
   protected void appendSelectColumns(
       SQL sql, Set<String> distinctColumns, Set<String> targetColumns) {
+
     // 둘 다 비었으면, 전체 필드 SELECT
     if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
       for (String field : entityHelper.getEntityFields()) {
@@ -101,13 +97,16 @@ public class MybatisClauseBuilder {
 
   /** WHERE 절 존재 여부 확인 (UPDATE, DELETE 시 강제 사용) */
   protected void ensureWhereClause(final SQL sql) {
+    // 간단한 방법: toString().toLowerCase().contains("where ")
     if (!sql.toString().toLowerCase().contains("where ")) {
       log.warn("whereConditions are empty");
       throw new MybatisRepositoryException("whereConditions are required");
     }
   }
 
-  /** IN, NOT IN 절 빌드 */
+  // ===========================================
+  // Condition별 빌드 메서드
+  // ===========================================
   protected String buildInClause(String dbColumnName, Object value, boolean isNotIn) {
     if (!(value instanceof Set)) {
       log.warn("conditionType '{}' requires Set", (isNotIn ? "notIn" : "in"));
@@ -128,12 +127,13 @@ public class MybatisClauseBuilder {
     return String.format("`%s` %s IN (%s)", dbColumnName, (isNotIn ? "NOT" : ""), inFormatted);
   }
 
-  /** '=' 조건절 빌드 */
   protected String buildEqualClause(final String dbColumnName, final Object value) {
     return String.format("`%s` = %s", dbColumnName, formatValueForSQL(value));
   }
 
-  /** SQL에서 사용할 수 있도록 값 포맷팅 */
+  // ===========================================
+  // Value Formatting
+  // ===========================================
   protected String formatValueForSQL(final Object value) {
     if (value == null) {
       return "null";
@@ -155,14 +155,14 @@ public class MybatisClauseBuilder {
           + stringHelper.instantToString(
               ((OffsetDateTime) value).toInstant(), "yyyy-MM-dd HH:mm:ss.SSS")
           + "'";
-    } else if (value instanceof Enum<?>) {
+    } else if (value instanceof Enum) {
       return formatEnumValue((Enum<?>) value);
-    } else if (value instanceof Collection<?>) {
+    } else if (value instanceof Collection) {
       return formatCollectionValue((Collection<?>) value);
-    } else if (value instanceof Map<?, ?>) {
+    } else if (value instanceof Map) {
       return formatMapValue((Map<?, ?>) value);
     }
-    // 숫자, Boolean 등등은 기본 toString(); 문자열 내 단일인용부호 이스케이프
+    // 숫자, Boolean 등등 기본 toString(); 단, 문자열 내 단일인용부호 이스케이프
     return stringHelper.escapeSingleQuote(value.toString());
   }
 
@@ -173,18 +173,22 @@ public class MybatisClauseBuilder {
           + stringHelper.instantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS")
           + "'";
     }
+    // 일반 문자열
     return "'" + stringHelper.escapeSingleQuote(str) + "'";
   }
 
   private String formatEnumValue(Enum<?> enumValue) {
-    if (enumValue instanceof io.github.bestheroz.mybatis.type.ValueEnum) {
-      return "'" + ((ValueEnum) enumValue).getValue() + "'";
+    if (enumValue instanceof ValueEnum) {
+      // ValueEnum 처리
+      ValueEnum ve = (ValueEnum) enumValue;
+      return "'" + ve.getValue() + "'";
     }
+    // 기본 name()
     return "'" + enumValue.name() + "'";
   }
 
   private String formatCollectionValue(Collection<?> collection) {
-    // '[val1, val2, val3]'
+    // 예: '[val1, val2, val3]' 형태
     String joined =
         collection.stream()
             .map(v -> formatValueForSQL(v).replace("'", "\"")) // 내부 문자열은 " 로 치환
@@ -193,7 +197,7 @@ public class MybatisClauseBuilder {
   }
 
   private String formatMapValue(Map<?, ?> map) {
-    // JSON 비슷하게: "{\"key1\":val1, \"key2\":val2, ...}"
+    // 예: "{\"key1\":val1, \"key2\":val2, ...}"
     StringBuilder sb = new StringBuilder().append("\"{");
     boolean first = true;
     for (Map.Entry<?, ?> entry : map.entrySet()) {
