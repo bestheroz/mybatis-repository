@@ -13,13 +13,16 @@ import org.springframework.lang.NonNull;
 public class MybatisCommand {
   private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
 
-  // 캐싱: EntityClass -> Field[]
+  // ======================
+  // Caches
+  // ======================
   protected static final Map<Class<?>, Field[]> FIELD_CACHE = new ConcurrentHashMap<>();
-  // 캐싱: EntityClass -> TableName
   protected static final Map<Class<?>, String> TABLE_NAME_CACHE = new ConcurrentHashMap<>();
-  // 캐싱: camelCase FieldName -> snake_case ColumnName
   protected static final Map<String, String> COLUMN_NAME_CACHE = new ConcurrentHashMap<>();
 
+  // ======================
+  // Allowed Method List
+  // ======================
   public static final String SELECT_ITEMS = "getDistinctAndTargetItemsByMapOrderByLimitOffset";
   public static final String SELECT_ITEM_BY_MAP = "getItemByMap";
   public static final String COUNT_BY_MAP = "countByMap";
@@ -42,9 +45,7 @@ public class MybatisCommand {
   private final MybatisEntityHelper entityHelper;
   private final MybatisStringHelper stringHelper;
   private final MybatisClauseBuilderHelper clauseBuilderHelper;
-  // ===========================================
-  // Constructor
-  // ===========================================
+
   public MybatisCommand() {
     this.stringHelper = new MybatisStringHelper();
     this.entityHelper = new MybatisEntityHelper(stringHelper);
@@ -52,7 +53,7 @@ public class MybatisCommand {
   }
 
   // ===========================================
-  // Public Methods - SELECT
+  // SELECT
   // ===========================================
   public String countByMap(final Map<String, Object> whereConditions) {
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(entityHelper.getTableName());
@@ -83,14 +84,14 @@ public class MybatisCommand {
     SQL sql = new SQL();
 
     // SELECT
-    clauseBuilderHelper.appendSelectClause(sql, distinctColumns, targetColumns);
+    clauseBuilderHelper.appendSelectColumns(sql, distinctColumns, targetColumns);
     sql.FROM(entityHelper.getTableName());
 
     // WHERE
     clauseBuilderHelper.buildWhereClause(sql, whereConditions);
 
     // ORDER BY
-    clauseBuilderHelper.appendOrderByClause(sql, orderByConditions);
+    clauseBuilderHelper.appendOrderBy(sql, orderByConditions);
 
     // LIMIT / OFFSET
     if (limit != null) {
@@ -105,7 +106,7 @@ public class MybatisCommand {
   }
 
   // ===========================================
-  // Public Methods - INSERT
+  // INSERT
   // ===========================================
   public <T> String insert(@NonNull final T entity) {
     SQL sql = new SQL();
@@ -133,7 +134,7 @@ public class MybatisCommand {
     String tableName = stringHelper.wrapIdentifier(entityHelper.getTableName(entityClass));
     sql.INSERT_INTO(tableName);
 
-    // 전체 컬럼(Exclude 제외)
+    // 전체 컬럼 (Exclude 제외)
     Set<String> columns = entityHelper.getEntityFields(entityClass);
     List<String> columnList =
         columns.stream().map(entityHelper::getColumnName).collect(Collectors.toList());
@@ -153,7 +154,6 @@ public class MybatisCommand {
       }
       valuesList.add(rowValueList);
     }
-
     String valuesJoined =
         valuesList.stream()
             .map(value -> String.join(", ", value))
@@ -165,7 +165,7 @@ public class MybatisCommand {
   }
 
   // ===========================================
-  // Public Methods - UPDATE
+  // UPDATE
   // ===========================================
   public String updateMapByMap(
       final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
@@ -175,6 +175,7 @@ public class MybatisCommand {
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
       String javaFieldName = entry.getKey();
       Object value = entry.getValue();
+
       if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
         String dbColumnName = entityHelper.getColumnName(javaFieldName);
         sql.SET(clauseBuilderHelper.buildEqualClause(dbColumnName, value));
@@ -182,24 +183,25 @@ public class MybatisCommand {
     }
 
     clauseBuilderHelper.buildWhereClause(sql, whereConditions);
-    clauseBuilderHelper.requireWhereClause(sql);
+    clauseBuilderHelper.ensureWhereClause(sql);
     log.debug("updateMapByMap SQL: {}", sql);
     return sql.toString();
   }
 
   // ===========================================
-  // Public Methods - DELETE
+  // DELETE
   // ===========================================
   public String deleteByMap(final Map<String, Object> whereConditions) {
     clauseBuilderHelper.validateWhereConditions(whereConditions);
 
     SQL sql = new SQL().DELETE_FROM(entityHelper.getTableName());
     clauseBuilderHelper.buildWhereClause(sql, whereConditions);
-    clauseBuilderHelper.requireWhereClause(sql);
+    clauseBuilderHelper.ensureWhereClause(sql);
     log.debug("deleteByMap SQL: {}", sql);
     return sql.toString();
   }
 
+  /** Reflection을 통해 객체의 필드를 Map 으로 변환 */
   public static Map<String, Object> toMap(final Object source) {
     final Map<String, Object> map = new HashMap<>();
     final Field[] fields = MybatisEntityHelper.getAllNonExcludedFields(source.getClass());
