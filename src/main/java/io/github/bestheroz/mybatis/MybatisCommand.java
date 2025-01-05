@@ -173,9 +173,10 @@ public class MybatisCommand {
 
     SQL sql = new SQL().UPDATE(entityHelper.getTableName());
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
-      String javaFieldName = entry.getKey();
-      Object value = entry.getValue();
+      final String javaFieldName = entry.getKey();
+      final Object value = entry.getValue();
 
+      // ExcludeFields 제외
       if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
         String dbColumnName = entityHelper.getColumnName(javaFieldName);
         sql.SET(clauseBuilder.buildEqualClause(dbColumnName, value));
@@ -184,6 +185,7 @@ public class MybatisCommand {
 
     clauseBuilder.buildWhereClause(sql, whereConditions);
     clauseBuilder.ensureWhereClause(sql);
+
     log.debug("updateMapByMap SQL: {}", sql);
     return sql.toString();
   }
@@ -197,6 +199,7 @@ public class MybatisCommand {
     SQL sql = new SQL().DELETE_FROM(entityHelper.getTableName());
     clauseBuilder.buildWhereClause(sql, whereConditions);
     clauseBuilder.ensureWhereClause(sql);
+
     log.debug("deleteByMap SQL: {}", sql);
     return sql.toString();
   }
