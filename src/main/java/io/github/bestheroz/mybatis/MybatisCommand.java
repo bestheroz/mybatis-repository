@@ -5,9 +5,8 @@ import jakarta.persistence.Table;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Field;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.text.SimpleDateFormat;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -340,46 +339,48 @@ public class MybatisCommand {
   private String getFormattedValue(final Object value) {
     if (value == null) {
       return "null";
-    }
-    if (value instanceof String) {
+    } else if (value instanceof String) {
       String str = (String) value;
       if (isISO8601String(str)) {
         return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
-        // Uncomment for MySQL
-        // return String.format("FROM_UNIXTIME(%d)", Instant.parse(str).toEpochMilli() / 1000);
       } else {
         return "'" + str.replace("'", "''") + "'";
       }
-    }
-    if (value instanceof Instant) {
+    } else if (value instanceof LocalDateTime) {
+      LocalDateTime localDateTime = (LocalDateTime) value;
+      return "'" + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")) + "'";
+    } else if (value instanceof LocalDate) {
+      LocalDate localDate = (LocalDate) value;
+      return "'" + localDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
+    } else if (value instanceof Date) {
+      Date date = (Date) value;
+      return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
+    } else if (value instanceof OffsetDateTime) {
+      OffsetDateTime offsetDateTime = (OffsetDateTime) value;
+      return "'" + offsetDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSXXX")) + "'";
+    } else if (value instanceof Instant) {
       Instant instant = (Instant) value;
       return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
-      // Uncomment for MySQL
-      // return String.format("FROM_UNIXTIME(%d)", instant.toEpochMilli() / 1000);
-    }
-    if (value instanceof Enum<?>) {
+    } else if (value instanceof Enum<?>) {
       if (value instanceof ValueEnum) {
         return "'" + ((ValueEnum) value).getValue() + "'";
       }
       return "'" + ((Enum<?>) value).name() + "'";
-    }
-    if (value instanceof List<?>) {
+    } else if (value instanceof List<?>) {
       List<?> list = (List<?>) value;
-      String listStr =
-          list.stream()
+      String listStr = list.stream()
               .map(v -> getFormattedValue(v).replace("'", "\""))
               .collect(Collectors.joining(", "));
       return "'[" + listStr + "]'";
-    }
-    if (value instanceof Set<?>) {
+    } else if (value instanceof Set<?>) {
       Set<?> set = (Set<?>) value;
-      String setStr = set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
+      String setStr = set.stream()
+              .map(this::getFormattedValue)
+              .collect(Collectors.joining(", "));
       return "'[" + setStr + "]'";
-    }
-    if (value instanceof Map<?, ?>) {
+    } else if (value instanceof Map<?, ?>) {
       Map<?, ?> map = (Map<?, ?>) value;
-      StringBuilder sb = new StringBuilder();
-      sb.append("\"{");
+      StringBuilder sb = new StringBuilder().append("\"{");
       boolean first = true;
       for (Map.Entry<?, ?> entry : map.entrySet()) {
         if (!first) {
@@ -387,13 +388,13 @@ public class MybatisCommand {
         }
         first = false;
         sb.append("\"")
-            .append(entry.getKey())
-            .append("\":")
-            .append(getFormattedValue(entry.getValue()));
+                .append(entry.getKey())
+                .append("\":")
+                .append(getFormattedValue(entry.getValue()));
       }
-      sb.append("}\"");
-      return sb.toString();
+      return sb.append("}\"").toString();
     }
+
     // Default case
     return value.toString().replace("'", "''");
   }
