@@ -44,12 +44,12 @@ public class MybatisCommand {
 
   private final MybatisEntityHelper entityHelper;
   private final MybatisStringHelper stringHelper;
-  private final MybatisClauseBuilderHelper clauseBuilderHelper;
+  private final MybatisClauseBuilder clauseBuilder;
 
   public MybatisCommand() {
     this.stringHelper = new MybatisStringHelper();
     this.entityHelper = new MybatisEntityHelper(stringHelper);
-    this.clauseBuilderHelper = new MybatisClauseBuilderHelper(stringHelper, entityHelper);
+    this.clauseBuilder = new MybatisClauseBuilder(stringHelper, entityHelper);
   }
 
   // ===========================================
@@ -57,13 +57,13 @@ public class MybatisCommand {
   // ===========================================
   public String countByMap(final Map<String, Object> whereConditions) {
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(entityHelper.getTableName());
-    clauseBuilderHelper.buildWhereClause(sql, whereConditions);
+    clauseBuilder.buildWhereClause(sql, whereConditions);
     log.debug("countByMap SQL: {}", sql);
     return sql.toString();
   }
 
   public String getItemByMap(final Map<String, Object> whereConditions) {
-    clauseBuilderHelper.validateWhereConditions(whereConditions);
+    clauseBuilder.validateWhereConditions(whereConditions);
     return getDistinctAndTargetItemsByMapOrderByLimitOffset(
         Collections.emptySet(),
         Collections.emptySet(),
@@ -84,14 +84,14 @@ public class MybatisCommand {
     SQL sql = new SQL();
 
     // SELECT
-    clauseBuilderHelper.appendSelectColumns(sql, distinctColumns, targetColumns);
+    clauseBuilder.appendSelectColumns(sql, distinctColumns, targetColumns);
     sql.FROM(entityHelper.getTableName());
 
     // WHERE
-    clauseBuilderHelper.buildWhereClause(sql, whereConditions);
+    clauseBuilder.buildWhereClause(sql, whereConditions);
 
     // ORDER BY
-    clauseBuilderHelper.appendOrderBy(sql, orderByConditions);
+    clauseBuilder.appendOrderBy(sql, orderByConditions);
 
     // LIMIT / OFFSET
     if (limit != null) {
@@ -116,7 +116,7 @@ public class MybatisCommand {
     for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
       sql.VALUES(
           stringHelper.wrapIdentifier(entityHelper.getColumnName(entry.getKey())),
-          clauseBuilderHelper.formatValueForSQL(entry.getValue()));
+          clauseBuilder.formatValueForSQL(entry.getValue()));
     }
 
     log.debug("insert SQL: {}", sql);
@@ -150,7 +150,7 @@ public class MybatisCommand {
       Map<String, Object> entityMap = toMap(entity);
       List<String> rowValueList = new ArrayList<>();
       for (String column : columns) {
-        rowValueList.add(clauseBuilderHelper.formatValueForSQL(entityMap.get(column)));
+        rowValueList.add(clauseBuilder.formatValueForSQL(entityMap.get(column)));
       }
       valuesList.add(rowValueList);
     }
@@ -169,7 +169,7 @@ public class MybatisCommand {
   // ===========================================
   public String updateMapByMap(
       final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
-    clauseBuilderHelper.validateWhereConditions(whereConditions);
+    clauseBuilder.validateWhereConditions(whereConditions);
 
     SQL sql = new SQL().UPDATE(entityHelper.getTableName());
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
@@ -178,12 +178,12 @@ public class MybatisCommand {
 
       if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
         String dbColumnName = entityHelper.getColumnName(javaFieldName);
-        sql.SET(clauseBuilderHelper.buildEqualClause(dbColumnName, value));
+        sql.SET(clauseBuilder.buildEqualClause(dbColumnName, value));
       }
     }
 
-    clauseBuilderHelper.buildWhereClause(sql, whereConditions);
-    clauseBuilderHelper.ensureWhereClause(sql);
+    clauseBuilder.buildWhereClause(sql, whereConditions);
+    clauseBuilder.ensureWhereClause(sql);
     log.debug("updateMapByMap SQL: {}", sql);
     return sql.toString();
   }
@@ -192,11 +192,11 @@ public class MybatisCommand {
   // DELETE
   // ===========================================
   public String deleteByMap(final Map<String, Object> whereConditions) {
-    clauseBuilderHelper.validateWhereConditions(whereConditions);
+    clauseBuilder.validateWhereConditions(whereConditions);
 
     SQL sql = new SQL().DELETE_FROM(entityHelper.getTableName());
-    clauseBuilderHelper.buildWhereClause(sql, whereConditions);
-    clauseBuilderHelper.ensureWhereClause(sql);
+    clauseBuilder.buildWhereClause(sql, whereConditions);
+    clauseBuilder.ensureWhereClause(sql);
     log.debug("deleteByMap SQL: {}", sql);
     return sql.toString();
   }

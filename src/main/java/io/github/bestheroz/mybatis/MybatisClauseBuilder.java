@@ -11,14 +11,13 @@ import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class MybatisClauseBuilderHelper {
-  private static final Logger log = LoggerFactory.getLogger(MybatisClauseBuilderHelper.class);
+public class MybatisClauseBuilder {
+  private static final Logger log = LoggerFactory.getLogger(MybatisClauseBuilder.class);
 
   private final MybatisStringHelper stringHelper;
   private final MybatisEntityHelper entityHelper;
 
-  public MybatisClauseBuilderHelper(
-      MybatisStringHelper stringHelper, MybatisEntityHelper entityHelper) {
+  public MybatisClauseBuilder(MybatisStringHelper stringHelper, MybatisEntityHelper entityHelper) {
     this.stringHelper = stringHelper;
     this.entityHelper = entityHelper;
   }
