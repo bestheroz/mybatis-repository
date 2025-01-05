@@ -58,7 +58,7 @@ public class MybatisCommand {
   public String countByMap(final Map<String, Object> whereConditions) {
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(entityHelper.getTableName());
     clauseBuilder.buildWhereClause(sql, whereConditions);
-    log.debug("countByMap SQL: {}", sql);
+    log.debug("count SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
@@ -101,7 +101,7 @@ public class MybatisCommand {
       sql.OFFSET(offset);
     }
 
-    log.debug("getDistinctAndTargetItemsByMapOrderByLimitOffset SQL: {}", sql);
+    log.debug("select SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
@@ -119,7 +119,7 @@ public class MybatisCommand {
           clauseBuilder.formatValueForSQL(entry.getValue()));
     }
 
-    log.debug("insert SQL: {}", sql);
+    log.debug("insert SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
@@ -160,7 +160,7 @@ public class MybatisCommand {
             .collect(Collectors.joining("), ("));
     sql.INTO_VALUES(valuesJoined);
 
-    log.debug("insertBatch SQL: {}", sql);
+    log.debug("insertBatch SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
@@ -186,7 +186,7 @@ public class MybatisCommand {
     clauseBuilder.buildWhereClause(sql, whereConditions);
     clauseBuilder.ensureWhereClause(sql);
 
-    log.debug("updateMapByMap SQL: {}", sql);
+    log.debug("update SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
@@ -200,7 +200,7 @@ public class MybatisCommand {
     clauseBuilder.buildWhereClause(sql, whereConditions);
     clauseBuilder.ensureWhereClause(sql);
 
-    log.debug("deleteByMap SQL: {}", sql);
+    log.debug("delete SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
 
