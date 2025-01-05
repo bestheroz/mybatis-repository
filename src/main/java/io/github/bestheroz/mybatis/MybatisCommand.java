@@ -21,8 +21,12 @@ import org.springframework.lang.NonNull;
 public class MybatisCommand {
   private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
 
-  // 캐싱할 때 사용 (EntityClass -> Field[])
+  // 캐싱: EntityClass -> Field[]
   private static final Map<Class<?>, Field[]> FIELD_CACHE = new ConcurrentHashMap<>();
+  // 캐싱: EntityClass -> TableName
+  private static final Map<Class<?>, String> TABLE_NAME_CACHE = new ConcurrentHashMap<>();
+  // 캐싱: camelCase FieldName -> snake_case ColumnName
+  private static final Map<String, String> COLUMN_NAME_CACHE = new ConcurrentHashMap<>();
 
   public static final String SELECT_ITEMS = "getDistinctAndTargetItemsByMapOrderByLimitOffset";
   public static final String SELECT_ITEM_BY_MAP = "getItemByMap";
@@ -101,23 +105,34 @@ public class MybatisCommand {
    * @return table 이름
    */
   public static String getTableName(final Class<?> entityClass) {
-    Table tableNameAnnotation = entityClass.getAnnotation(Table.class);
-    if (tableNameAnnotation != null) {
-      return tableNameAnnotation.name();
+    // 캐싱된 값 있으면 반환
+    if (TABLE_NAME_CACHE.containsKey(entityClass)) {
+      return TABLE_NAME_CACHE.get(entityClass);
     }
-    return getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
+
+    // 없으면 계산
+    Table tableAnnotation = entityClass.getAnnotation(Table.class);
+    String tableName;
+    if (tableAnnotation != null) {
+      tableName = tableAnnotation.name();
+    } else {
+      tableName = getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
+    }
+
+    TABLE_NAME_CACHE.put(entityClass, tableName);
+    return tableName;
   }
 
-  /** Entity 의 모든 필드를 불러온 뒤, {@link MybatisProperties#getExcludeFields()} 에 없는 필드만 모아 반환한다. */
+  /** 현재 Entity class 의 모든 필드 중 exclude되지 않은 필드명만 추출. */
+  private Set<String> getEntityFields() {
+    return this.getEntityFields(this.getEntityClass());
+  }
+
+  /** 특정 class 의 모든 필드 중 exclude되지 않은 필드명을 추출. */
   private <T> Set<String> getEntityFields(final Class<T> entityClass) {
     return Stream.of(getAllNonExcludedFields(entityClass))
         .map(Field::getName)
         .collect(Collectors.toSet());
-  }
-
-  /** 현재 Entity class 의 모든 필드를 구한다. */
-  private Set<String> getEntityFields() {
-    return this.getEntityFields(this.getEntityClass());
   }
 
   /** WHERE 절에 들어갈 map 조건이 필수적으로 존재해야 하므로, 없을 시 예외를 발생시킨다. */
@@ -194,7 +209,7 @@ public class MybatisCommand {
       Object value = entry.getValue();
       // exclude 필드 제외
       if (!MybatisProperties.getExcludeFields().contains(key)) {
-        sql.VALUES(wrapIdentifier(getCamelCaseToSnakeCase(key)), getFormattedValue(value));
+        sql.VALUES(wrapIdentifier(getColumnName(key)), getFormattedValue(value));
       }
     }
 
@@ -221,7 +236,7 @@ public class MybatisCommand {
     List<String> columnList =
         columns.stream()
             .filter(col -> !MybatisProperties.getExcludeFields().contains(col))
-            .map(MybatisCommand::getCamelCaseToSnakeCase)
+            .map(MybatisCommand::getColumnName)
             .collect(Collectors.toList());
 
     String columnsJoined =
@@ -261,7 +276,7 @@ public class MybatisCommand {
       String javaFieldName = entry.getKey();
       Object value = entry.getValue();
       if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
-        String dbColumnName = getCamelCaseToSnakeCase(javaFieldName);
+        String dbColumnName = getColumnName(javaFieldName);
         sql.SET(getEqualSql(dbColumnName, value));
       }
     }
@@ -295,20 +310,20 @@ public class MybatisCommand {
     // distinctColumns, targetColumns 모두 비어 있으면, 전체 컬럼 SELECT
     if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
       for (String field : this.getEntityFields()) {
-        sql.SELECT(wrapIdentifier(getCamelCaseToSnakeCase(field)));
+        sql.SELECT(wrapIdentifier(getColumnName(field)));
       }
       return;
     }
 
     // distinctColumns
     for (String distinctCol : distinctColumns) {
-      sql.SELECT_DISTINCT(wrapIdentifier(getCamelCaseToSnakeCase(distinctCol)));
+      sql.SELECT_DISTINCT(wrapIdentifier(getColumnName(distinctCol)));
     }
 
     // targetColumns
     for (String targetCol : targetColumns) {
       if (!distinctColumns.contains(targetCol)) {
-        sql.SELECT(wrapIdentifier(getCamelCaseToSnakeCase(targetCol)));
+        sql.SELECT(wrapIdentifier(getColumnName(targetCol)));
       }
     }
   }
@@ -319,9 +334,9 @@ public class MybatisCommand {
       if (condition.startsWith("-")) {
         // "-" 뒤 실제 컬럼명 추출
         String realCol = condition.substring(1);
-        sql.ORDER_BY(wrapIdentifier(getCamelCaseToSnakeCase(realCol)) + " DESC");
+        sql.ORDER_BY(wrapIdentifier(getColumnName(realCol)) + " DESC");
       } else {
-        sql.ORDER_BY(wrapIdentifier(getCamelCaseToSnakeCase(condition)) + " ASC");
+        sql.ORDER_BY(wrapIdentifier(getColumnName(condition)) + " ASC");
       }
     }
   }
@@ -343,8 +358,8 @@ public class MybatisCommand {
         conditionType = "eq"; // 별도 타입이 없으면 eq
       }
 
-      // columnName 은 camelCase -> snakeCase 변환
-      String dbColumnName = getCamelCaseToSnakeCase(columnName);
+      // columnName 은 camelCase -> snakeCase 변환 (캐싱)
+      String dbColumnName = getColumnName(columnName);
       String whereClause = getWhereString(conditionType, dbColumnName, value);
       sql.WHERE(whereClause);
     }
@@ -417,13 +432,13 @@ public class MybatisCommand {
 
   /**
    * DB에 들어갈 값으로 변환 - 문자열은 quote - date/time 은 지정된 포맷으로 - Enum 은 ValueEnum.getValue() 또는 name() -
-   * List, Set, Map 은 JSON 형태 등 - 그 외엔 toString()
+   * Collection, Map 은 JSON 형태 등 - 그 외엔 toString()
    */
   private String getFormattedValue(final Object value) {
     if (value == null) {
       return "null";
     }
-    // 단순 캐싱 or 메서드 분기
+    // 분기
     if (value instanceof String) {
       return formatStringValue((String) value);
     }
@@ -459,7 +474,6 @@ public class MybatisCommand {
     if (isISO8601String(str)) {
       return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
     }
-    // 일반 문자열
     return "'" + escapeSingleQuote(str) + "'";
   }
 
@@ -493,6 +507,7 @@ public class MybatisCommand {
   }
 
   private String formatCollectionValue(Collection<?> collection) {
+    // SQL 직렬화 시에는 문자열 quote 이슈가 있으므로 주의
     String joined =
         collection.stream()
             .map(v -> getFormattedValue(v).replace("'", "\""))
@@ -501,6 +516,7 @@ public class MybatisCommand {
   }
 
   private String formatMapValue(Map<?, ?> map) {
+    // SQL 직렬화 시에는 문자열 quote 이슈가 있으므로 주의
     StringBuilder sb = new StringBuilder().append("\"{");
     boolean first = true;
     for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -518,7 +534,6 @@ public class MybatisCommand {
   }
 
   private String escapeSingleQuote(String src) {
-    // 단일 인용부호를 이스케이프
     return src.replace("'", "''");
   }
 
@@ -528,8 +543,9 @@ public class MybatisCommand {
         .format(DateTimeFormatter.ofPattern(pattern));
   }
 
-  /** ISO8601 형식 문자열인지 간단하게 체크. 예시: 2021-01-01T01:23:45Z / 2021-01-01T01:23:45+09:00 */
+  /** ISO8601 형식 문자열인지 간단하게 체크. 예: 2021-01-01T01:23:45Z, 2021-01-01T01:23:45+09:00 */
   private boolean isISO8601String(final String value) {
+    // 실제로는 more strict한 검증 혹은 try-catch로 파싱을 시도할 수도 있음
     int countDash = 0;
     int countColon = 0;
     int countT = 0;
@@ -546,7 +562,7 @@ public class MybatisCommand {
         && (value.endsWith("Z") || countPlus == 1);
   }
 
-  /** camelCase -> snake_case */
+  /** camelCase -> snake_case 변환 + 캐싱. 외부에서 직접 써야 할 때는 {@link #getColumnName(String)}로 접근 */
   private static String getCamelCaseToSnakeCase(final String str) {
     StringBuilder result = new StringBuilder(str.length() * 2);
     result.append(Character.toLowerCase(str.charAt(0)));
@@ -559,6 +575,11 @@ public class MybatisCommand {
       }
     }
     return result.toString();
+  }
+
+  /** 컬럼명 캐싱하여 반환: camelCase -> snake_case */
+  private static String getColumnName(String fieldName) {
+    return COLUMN_NAME_CACHE.computeIfAbsent(fieldName, MybatisCommand::getCamelCaseToSnakeCase);
   }
 
   /** 엔티티 객체 -> Map 변환 */
@@ -640,7 +661,7 @@ public class MybatisCommand {
 
   /** 예외 스택트레이스를 문자열로 변환 */
   private static String getStackTrace(Throwable e) {
-    // 실제 운영에선 너무 자주 호출되지 않도록 주의
+    // 실제 운영환경에서는 trace 로그를 찍을지 여부를 신중하게 결정
     StringWriter sw = new StringWriter();
     PrintWriter pw = new PrintWriter(sw);
     e.printStackTrace(pw);
