@@ -65,13 +65,12 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          ./gradlew
-          publishToMavenCentral 
-          --no-daemon 
-          -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} 
-          -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} 
-          -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} 
-          -Psigning.password=${{ env.SIGNING_PASSWORD }}
+          ./gradlew publishToMavenCentral \
+            --no-daemon \
+            -PmavenCentralUsername=${{ env.MAVEN_USERNAME }} \
+            -PmavenCentralPassword=${{ env.MAVEN_PASSWORD }} \
+            -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} \
+            -Psigning.password=${{ env.SIGNING_PASSWORD }}
 
       # 8. build.gradle 변경 사항 커밋
       - name: Commit Changes
