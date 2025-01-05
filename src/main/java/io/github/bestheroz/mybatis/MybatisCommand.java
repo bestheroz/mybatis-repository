@@ -432,7 +432,7 @@ public class MybatisCommand {
 
   /**
    * DB에 들어갈 값으로 변환 - 문자열은 quote - date/time 은 지정된 포맷으로 - Enum 은 ValueEnum.getValue() 또는 name() -
-   * Collection, Map 은 JSON 형태 등 - 그 외엔 toString()
+   * List, Set, Map 은 JSON 형태 등 - 그 외엔 toString()
    */
   private String getFormattedValue(final Object value) {
     if (value == null) {
@@ -441,29 +441,21 @@ public class MybatisCommand {
     // 분기
     if (value instanceof String) {
       return formatStringValue((String) value);
-    }
-    if (value instanceof Instant) {
+    } else if (value instanceof Instant) {
       return formatInstantValue((Instant) value);
-    }
-    if (value instanceof Date) {
+    } else if (value instanceof Date) {
       return formatDateValue((Date) value);
-    }
-    if (value instanceof LocalDateTime) {
+    } else if (value instanceof LocalDateTime) {
       return formatLocalDateTimeValue((LocalDateTime) value);
-    }
-    if (value instanceof LocalDate) {
+    } else if (value instanceof LocalDate) {
       return formatLocalDateValue((LocalDate) value);
-    }
-    if (value instanceof OffsetDateTime) {
+    } else if (value instanceof OffsetDateTime) {
       return formatOffsetDateTime((OffsetDateTime) value);
-    }
-    if (value instanceof Enum<?>) {
+    } else if (value instanceof Enum<?>) {
       return formatEnumValue((Enum<?>) value);
-    }
-    if (value instanceof Collection<?>) {
+    } else if (value instanceof Collection<?>) {
       return formatCollectionValue((Collection<?>) value);
-    }
-    if (value instanceof Map<?, ?>) {
+    } else if (value instanceof Map<?, ?>) {
       return formatMapValue((Map<?, ?>) value);
     }
     // 기본 (숫자, boolean 등)
