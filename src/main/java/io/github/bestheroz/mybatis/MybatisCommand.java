@@ -28,9 +28,6 @@ public class MybatisCommand {
   public static final String DELETE_BY_MAP = "deleteByMap";
 
   private static final String SEPARATOR = ":";
-
-  public MybatisCommand() {}
-
   private static final Set<String> METHOD_LIST =
       Collections.unmodifiableSet(
           new HashSet<>(
@@ -43,33 +40,13 @@ public class MybatisCommand {
                   UPDATE_MAP_BY_MAP,
                   DELETE_BY_MAP)));
 
-  public String getTableName() {
-    return getTableName(this.getEntityClass());
-  }
+  public MybatisCommand() {}
 
-  public static String getTableName(final Class<?> entityClass) {
-    Table tableNameAnnotation = entityClass.getAnnotation(Table.class);
-    if (tableNameAnnotation != null) {
-      return tableNameAnnotation.name();
-    }
-    return getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
-  }
-
-  private void verifyWhereKey(final Map<String, Object> whereConditions) {
-    if (whereConditions == null || whereConditions.isEmpty()) {
-      log.warn("whereConditions is empty");
-      throw new RuntimeException("'where' Conditions is required");
-    }
-  }
-
-  public String countByMap(final Map<String, Object> whereConditions) {
-    final SQL sql = new SQL();
-    sql.SELECT("COUNT(1) AS CNT").FROM(this.getTableName());
-    this.getWhereSql(sql, whereConditions);
-    log.trace(sql.toString());
-    return sql.toString();
-  }
-
+  /**
+   * 현재 stacktrace 에서 유효한 element 를 찾고, 그 인터페이스에서 제네릭으로 선언된 클래스 타입을 파싱해 반환한다.
+   *
+   * @return entity class
+   */
   private Class<?> getEntityClass() {
     for (StackTraceElement element : new Throwable().getStackTrace()) {
       if (isValidStackTraceElement(element)) {
@@ -80,7 +57,11 @@ public class MybatisCommand {
     throw new RuntimeException("stackTraceElements is required");
   }
 
-  private boolean isValidStackTraceElement(StackTraceElement element) {
+  /**
+   * StackTraceElement 중 METHOD_LIST 에 포함되는 메소드이며, 해당 클래스를 찾고 인터페이스 정보를 검증해서 올바른 인터페이스/제네릭이면 true 를
+   * 반환한다.
+   */
+  private boolean isValidStackTraceElement(final StackTraceElement element) {
     try {
       Class<?> clazz = Class.forName(element.getClassName());
       return METHOD_LIST.contains(element.getMethodName())
@@ -92,7 +73,8 @@ public class MybatisCommand {
     }
   }
 
-  private Class<?> getClassFromStackTraceElement(StackTraceElement element) {
+  /** StackTraceElement 에서 제네릭 인터페이스 정보를 파싱해 entity class 를 구한다. */
+  private Class<?> getClassFromStackTraceElement(final StackTraceElement element) {
     try {
       Class<?> clazz = Class.forName(element.getClassName());
       String genericInterface = clazz.getInterfaces()[0].getGenericInterfaces()[0].getTypeName();
@@ -104,6 +86,26 @@ public class MybatisCommand {
     }
   }
 
+  /** 현재 Entity class 에 매핑된 Table name 을 구한다. */
+  public String getTableName() {
+    return getTableName(this.getEntityClass());
+  }
+
+  /**
+   * 특정 class 에 매핑된 Table name 을 구한다.
+   *
+   * @param entityClass Entity class
+   * @return table 이름
+   */
+  public static String getTableName(final Class<?> entityClass) {
+    Table tableNameAnnotation = entityClass.getAnnotation(Table.class);
+    if (tableNameAnnotation != null) {
+      return tableNameAnnotation.name();
+    }
+    return getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
+  }
+
+  /** Entity 의 모든 필드를 불러온 뒤, {@link MybatisProperties#getExcludeFields()} 에 없는 필드만 모아 반환한다. */
   private <T> Set<String> getEntityFields(final Class<T> entity) {
     return Stream.of(getAllFields(entity))
         .map(Field::getName)
@@ -112,58 +114,30 @@ public class MybatisCommand {
         .collect(Collectors.toSet());
   }
 
+  /** 현재 Entity class 의 모든 필드를 구한다. */
   private Set<String> getEntityFields() {
     return this.getEntityFields(this.getEntityClass());
   }
 
-  public String getDistinctAndTargetItemsByMapOrderByLimitOffset(
-      final Set<String> distinctColumns,
-      final Set<String> targetColumns,
-      final Map<String, Object> whereConditions,
-      final List<String> orderByConditions,
-      final Integer limit,
-      final Integer offset) {
-    final SQL sql = new SQL();
-
-    if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
-      for (String field : this.getEntityFields()) {
-        sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(field)));
-      }
-    } else {
-      for (String column : distinctColumns) {
-        sql.SELECT_DISTINCT(this.wrapIdentifier(getCamelCaseToSnakeCase(column)));
-      }
-      for (String column : targetColumns) {
-        if (!distinctColumns.contains(column)) {
-          sql.SELECT(this.wrapIdentifier(getCamelCaseToSnakeCase(column)));
-        }
-      }
+  /** WHERE 절에 들어갈 map 조건이 필수적으로 존재해야 하므로, 없을 시 예외를 발생시킨다. */
+  private void verifyWhereKey(final Map<String, Object> whereConditions) {
+    if (whereConditions == null || whereConditions.isEmpty()) {
+      log.warn("whereConditions is empty");
+      throw new RuntimeException("'where' Conditions is required");
     }
+  }
 
-    sql.FROM(this.getTableName());
-    if (limit != null) {
-      sql.LIMIT(limit);
-    }
-    if (offset != null) {
-      sql.OFFSET(offset);
-    }
-    this.getWhereSql(sql, whereConditions);
-
-    for (String condition : orderByConditions) {
-      String column = getCamelCaseToSnakeCase(condition);
-      if (column.startsWith("-")) {
-        sql.ORDER_BY(this.wrapIdentifier(column.substring(1)) + " desc");
-      } else {
-        sql.ORDER_BY(this.wrapIdentifier(column));
-      }
-    }
-
-    log.trace(sql.toString());
+  /** Count 쿼리를 생성한다. */
+  public String countByMap(final Map<String, Object> whereConditions) {
+    SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(this.getTableName());
+    getWhereSql(sql, whereConditions);
+    log.debug(sql.toString());
     return sql.toString();
   }
 
+  /** where 조건절이 있는 SELECT 쿼리를 만든다. (단건) */
   public String getItemByMap(final Map<String, Object> whereConditions) {
-    this.verifyWhereKey(whereConditions);
+    verifyWhereKey(whereConditions);
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
         Collections.emptySet(),
         Collections.emptySet(),
@@ -173,252 +147,384 @@ public class MybatisCommand {
         null);
   }
 
-  public <T> String insert(@NonNull final T entity) {
-    final SQL sql = new SQL();
-    sql.INSERT_INTO(getTableName(entity.getClass()));
-    Map<String, Object> entityMap = toMap(entity);
-    for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
-      String key = entry.getKey();
-      Object value = entry.getValue();
-      if (!MybatisProperties.getExcludeFields().contains(key)) {
-        sql.VALUES(
-            this.wrapIdentifier(getCamelCaseToSnakeCase(key)), this.getFormattedValue(value));
-      }
+  /** SELECT 쿼리를 생성한다. distinctColumns, targetColumns, where, order, paging 등을 모두 반영. */
+  public String getDistinctAndTargetItemsByMapOrderByLimitOffset(
+      final Set<String> distinctColumns,
+      final Set<String> targetColumns,
+      final Map<String, Object> whereConditions,
+      final List<String> orderByConditions,
+      final Integer limit,
+      final Integer offset) {
+
+    SQL sql = new SQL();
+
+    // SELECT 구문 구성
+    appendSelectClause(sql, distinctColumns, targetColumns);
+
+    // FROM 구문
+    sql.FROM(this.getTableName());
+
+    // LIMIT / OFFSET
+    if (limit != null) {
+      sql.LIMIT(limit);
+    }
+    if (offset != null) {
+      sql.OFFSET(offset);
     }
 
-    log.trace(sql.toString());
+    // WHERE 절
+    getWhereSql(sql, whereConditions);
+
+    // ORDER 절
+    appendOrderByClause(sql, orderByConditions);
+
+    log.debug(sql.toString());
     return sql.toString();
   }
 
+  /** INSERT (단건) 쿼리 생성 */
+  public <T> String insert(@NonNull final T entity) {
+    SQL sql = new SQL();
+    sql.INSERT_INTO(getTableName(entity.getClass()));
+    Map<String, Object> entityMap = toMap(entity);
+
+    for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
+      String key = entry.getKey();
+      Object value = entry.getValue();
+      // exclude 필드 제외
+      if (!MybatisProperties.getExcludeFields().contains(key)) {
+        sql.VALUES(wrapIdentifier(getCamelCaseToSnakeCase(key)), getFormattedValue(value));
+      }
+    }
+
+    log.debug(sql.toString());
+    return sql.toString();
+  }
+
+  /** INSERT (다건) 쿼리 생성 */
   public <T> String insertBatch(@NonNull final List<T> entities) {
     if (entities.isEmpty()) {
       log.warn("entities are empty");
       throw new RuntimeException("entities empty");
     }
-    final SQL sql = new SQL();
-    String tableName = this.wrapIdentifier(getTableName(entities.get(0).getClass()));
-    sql.INSERT_INTO(tableName);
-    final Set<String> columns = this.getEntityFields(entities.get(0).getClass());
 
+    SQL sql = new SQL();
+    Class<?> entityClass = entities.get(0).getClass();
+    String tableName = wrapIdentifier(getTableName(entityClass));
+    sql.INSERT_INTO(tableName);
+
+    // 공통으로 삽입할 컬럼
+    Set<String> columns = getEntityFields(entityClass);
+
+    // 필드명을 snake_case 로 변경한 뒤, exclude 필드가 아닌 것만 columns 로 구성
     String columnsJoined =
         columns.stream()
-            .filter(item -> !MybatisProperties.getExcludeFields().contains(item))
-            .map(str -> this.wrapIdentifier(getCamelCaseToSnakeCase(str)))
+            .filter(col -> !MybatisProperties.getExcludeFields().contains(col))
+            .map(str -> wrapIdentifier(getCamelCaseToSnakeCase(str)))
             .collect(Collectors.joining(", "));
     sql.INTO_COLUMNS(columnsJoined);
 
+    // 각 row 데이터 생성
     List<List<String>> valuesList = new ArrayList<>();
     for (T entity : entities) {
       Map<String, Object> entityMap = toMap(entity);
-      List<String> values = new ArrayList<>();
+      List<String> rowValueList = new ArrayList<>();
       for (String column : columns) {
-        String snakeCaseColumn = getCamelCaseToSnakeCase(column);
-        Object value = entityMap.get(column);
-        values.add(this.getFormattedValue(value));
+        rowValueList.add(getFormattedValue(entityMap.get(column)));
       }
-      valuesList.add(values);
+      valuesList.add(rowValueList);
     }
 
+    // VALUES(...) 구문들 생성
     String valuesJoined =
         valuesList.stream()
             .map(value -> String.join(", ", value))
             .collect(Collectors.joining("), ("));
     sql.INTO_VALUES(valuesJoined);
 
-    log.trace(sql.toString());
+    log.debug(sql.toString());
     return sql.toString();
   }
 
+  /** UPDATE 쿼리 생성 */
   public String updateMapByMap(
       final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
-    this.verifyWhereKey(whereConditions);
+    verifyWhereKey(whereConditions);
 
-    final SQL sql = new SQL();
-    sql.UPDATE(this.getTableName());
+    SQL sql = new SQL().UPDATE(getTableName());
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
       String javaFieldName = entry.getKey();
       Object value = entry.getValue();
       if (!MybatisProperties.getExcludeFields().contains(javaFieldName)) {
         String dbColumnName = getCamelCaseToSnakeCase(javaFieldName);
-        sql.SET(this.getEqualSql(dbColumnName, value));
+        sql.SET(getEqualSql(dbColumnName, value));
       }
     }
 
-    this.getWhereSql(sql, whereConditions);
-    if (!sql.toString().toLowerCase().contains("where ")) {
-      log.warn("whereConditions are empty");
-      throw new RuntimeException("whereConditions are empty");
-    }
-    log.trace(sql.toString());
+    getWhereSql(sql, whereConditions);
+    requireWhereClause(sql);
+    log.debug(sql.toString());
     return sql.toString();
   }
 
+  /** DELETE 쿼리 생성 */
   public String deleteByMap(final Map<String, Object> whereConditions) {
-    this.verifyWhereKey(whereConditions);
-    final SQL sql = new SQL();
-    sql.DELETE_FROM(this.getTableName());
-    this.getWhereSql(sql, whereConditions);
-    this.requiredWhereConditions(sql);
-    log.trace(sql.toString());
+    verifyWhereKey(whereConditions);
+    SQL sql = new SQL().DELETE_FROM(this.getTableName());
+    getWhereSql(sql, whereConditions);
+    requireWhereClause(sql);
+    log.debug(sql.toString());
     return sql.toString();
   }
 
-  private void requiredWhereConditions(final SQL sql) {
+  /** WHERE 절이 필수적으로 들어가야 하는 쿼리(UPDATE, DELETE)에서 확인용. */
+  private void requireWhereClause(final SQL sql) {
     if (!sql.toString().toLowerCase().contains("where ")) {
       log.warn("whereConditions are empty");
       throw new RuntimeException("whereConditions are required");
     }
   }
 
-  private String getWhereString(
-      final String conditionType, final String dbColumnName, final Object value) {
-    switch (conditionType) {
-      case "ne":
-      case "not":
-        return String.format("`%s` <> %s", dbColumnName, this.getFormattedValue(value));
-      case "in":
-        if (!(value instanceof Set)) {
-          log.warn("conditionType 'in' requires Set");
-          throw new RuntimeException(
-              "conditionType 'in' requires Set, yours : " + value.getClass());
-        }
-        Set<?> inValues = (Set<?>) value;
-        if (inValues.isEmpty()) {
-          log.warn("WHERE - empty in cause : {}", dbColumnName);
-          throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
-        }
-        String inFormatted =
-            inValues.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
-        return String.format("`%s` IN (%s)", dbColumnName, inFormatted);
-      case "notIn":
-        if (!(value instanceof Set)) {
-          log.warn("conditionType 'notIn' requires Set");
-          throw new RuntimeException(
-              "conditionType 'notIn' requires Set, yours: " + value.getClass());
-        }
-        Set<?> notInValues = (Set<?>) value;
-        if (notInValues.isEmpty()) {
-          log.warn("WHERE - empty in cause : {}", dbColumnName);
-          throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
-        }
-        String notInFormatted =
-            notInValues.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
-        return String.format("`%s` NOT IN (%s)", dbColumnName, notInFormatted);
-      case "null":
-        return String.format("`%s` IS NULL", dbColumnName);
-      case "notNull":
-        return String.format("`%s` IS NOT NULL", dbColumnName);
-      case "contains":
-        return String.format("INSTR(`%s`, %s) > 0", dbColumnName, this.getFormattedValue(value));
-      case "notContains":
-        return String.format("INSTR(`%s`, %s) = 0", dbColumnName, this.getFormattedValue(value));
-      case "startsWith":
-        return String.format("INSTR(`%s`, %s) = 1", dbColumnName, this.getFormattedValue(value));
-      case "endsWith":
-        return String.format(
-            "RIGHT(`%s`, CHAR_LENGTH(%s)) = %s",
-            dbColumnName, this.getFormattedValue(value), this.getFormattedValue(value));
-      case "lt":
-        return String.format("`%s` < %s", dbColumnName, this.getFormattedValue(value));
-      case "lte":
-        return String.format("`%s` <= %s", dbColumnName, this.getFormattedValue(value));
-      case "gt":
-        return String.format("`%s` > %s", dbColumnName, this.getFormattedValue(value));
-      case "gte":
-        return String.format("`%s` >= %s", dbColumnName, this.getFormattedValue(value));
-      case "eq":
-      default:
-        return this.getEqualSql(dbColumnName, value);
+  /** SELECT 구문을 구성하는 로직. distinctColumns, targetColumns 가 모두 비어 있으면 entity 의 모든 필드를 SELECT */
+  private void appendSelectClause(SQL sql, Set<String> distinctColumns, Set<String> targetColumns) {
+    // distinctColumns, targetColumns 모두 비어 있으면, 전체 컬럼 SELECT
+    if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
+      for (String field : this.getEntityFields()) {
+        sql.SELECT(wrapIdentifier(getCamelCaseToSnakeCase(field)));
+      }
+      return;
+    }
+
+    // distinctColumns
+    for (String distinctCol : distinctColumns) {
+      sql.SELECT_DISTINCT(wrapIdentifier(getCamelCaseToSnakeCase(distinctCol)));
+    }
+
+    // targetColumns
+    for (String targetCol : targetColumns) {
+      if (!distinctColumns.contains(targetCol)) {
+        sql.SELECT(wrapIdentifier(getCamelCaseToSnakeCase(targetCol)));
+      }
     }
   }
 
-  private String getEqualSql(final String dbColumnName, final Object value) {
-    return String.format("`%s` = %s", dbColumnName, this.getFormattedValue(value));
-  }
-
-  private String getFormattedValue(final Object value) {
-    if (value == null) {
-      return "null";
-    } else if (value instanceof String) {
-      String str = (String) value;
-      if (isISO8601String(str)) {
-        return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+  /** Order By 구문 구성 orderByConditions 의 원소가 '-' 로 시작하면 desc 정렬 */
+  private void appendOrderByClause(SQL sql, List<String> orderByConditions) {
+    for (String condition : orderByConditions) {
+      String column = getCamelCaseToSnakeCase(condition);
+      if (column.startsWith("-")) {
+        sql.ORDER_BY(wrapIdentifier(column.substring(1)) + " desc");
       } else {
-        return "'" + str.replace("'", "''") + "'";
+        sql.ORDER_BY(wrapIdentifier(column));
       }
-    } else if (value instanceof Instant) {
-      Instant instant = (Instant) value;
-      return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
-    } else if (value instanceof Date) {
-      Date date = (Date) value;
-      return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
-    } else if (value instanceof LocalDateTime) {
-      LocalDateTime localDateTime = (LocalDateTime) value;
-      return "'"
-          + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))
-          + "'";
-    } else if (value instanceof LocalDate) {
-      LocalDate localDate = (LocalDate) value;
-      return "'" + localDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
-    } else if (value instanceof OffsetDateTime) {
-      OffsetDateTime offsetDateTime = (OffsetDateTime) value;
-      return "'" + converterInstantToString(offsetDateTime.toInstant(), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
-    } else if (value instanceof Enum<?>) {
-      if (value instanceof ValueEnum) {
-        return "'" + ((ValueEnum) value).getValue() + "'";
-      }
-      return "'" + ((Enum<?>) value).name() + "'";
-    } else if (value instanceof List<?>) {
-      List<?> list = (List<?>) value;
-      String listStr =
-          list.stream()
-              .map(v -> getFormattedValue(v).replace("'", "\""))
-              .collect(Collectors.joining(", "));
-      return "'[" + listStr + "]'";
-    } else if (value instanceof Set<?>) {
-      Set<?> set = (Set<?>) value;
-      String setStr = set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
-      return "'[" + setStr + "]'";
-    } else if (value instanceof Map<?, ?>) {
-      Map<?, ?> map = (Map<?, ?>) value;
-      StringBuilder sb = new StringBuilder().append("\"{");
-      boolean first = true;
-      for (Map.Entry<?, ?> entry : map.entrySet()) {
-        if (!first) {
-          sb.append(", ");
-        }
-        first = false;
-        sb.append("\"")
-            .append(entry.getKey())
-            .append("\":")
-            .append(getFormattedValue(entry.getValue()));
-      }
-      return sb.append("}\"").toString();
     }
-
-    // Default case
-    return value.toString().replace("'", "''");
   }
 
+  /** WHERE 절에 들어갈 조건들을 SQL 객체에 반영한다. */
   private void getWhereSql(final SQL sql, final Map<String, Object> whereConditions) {
+    if (whereConditions == null) {
+      return;
+    }
+
     for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
       String key = entry.getKey();
       Object value = entry.getValue();
+
+      // key를 ':' 기준으로 split
       String columnName = substringBefore(key);
       String conditionType = substringAfter(key);
       if (conditionType.isEmpty()) {
-        conditionType = "eq";
+        conditionType = "eq"; // 별도 타입이 없으면 eq
       }
+
+      // columnName 은 camelCase -> snakeCase 변환
       String whereClause =
           getWhereString(conditionType, getCamelCaseToSnakeCase(columnName), value);
       sql.WHERE(whereClause);
     }
   }
 
-  private String wrapIdentifier(final String identifier) {
-    return "`" + identifier + "`";
+  /** conditionType 에 따른 WHERE 조건 문자열 생성 */
+  private String getWhereString(
+      final String conditionType, final String dbColumnName, final Object value) {
+    switch (conditionType) {
+      case "ne":
+      case "not":
+        return String.format("`%s` <> %s", dbColumnName, getFormattedValue(value));
+      case "in":
+        return buildInClause(dbColumnName, value, false);
+      case "notIn":
+        return buildInClause(dbColumnName, value, true);
+      case "null":
+        return String.format("`%s` IS NULL", dbColumnName);
+      case "notNull":
+        return String.format("`%s` IS NOT NULL", dbColumnName);
+      case "contains":
+        return String.format("INSTR(`%s`, %s) > 0", dbColumnName, getFormattedValue(value));
+      case "notContains":
+        return String.format("INSTR(`%s`, %s) = 0", dbColumnName, getFormattedValue(value));
+      case "startsWith":
+        return String.format("INSTR(`%s`, %s) = 1", dbColumnName, getFormattedValue(value));
+      case "endsWith":
+        return String.format(
+            "RIGHT(`%s`, CHAR_LENGTH(%s)) = %s",
+            dbColumnName, getFormattedValue(value), getFormattedValue(value));
+      case "lt":
+        return String.format("`%s` < %s", dbColumnName, getFormattedValue(value));
+      case "lte":
+        return String.format("`%s` <= %s", dbColumnName, getFormattedValue(value));
+      case "gt":
+        return String.format("`%s` > %s", dbColumnName, getFormattedValue(value));
+      case "gte":
+        return String.format("`%s` >= %s", dbColumnName, getFormattedValue(value));
+      case "eq":
+      default:
+        return getEqualSql(dbColumnName, value);
+    }
   }
 
+  /** IN / NOT IN 구문 빌더 */
+  private String buildInClause(String dbColumnName, Object value, boolean isNotIn) {
+    if (!(value instanceof Set)) {
+      log.warn("conditionType '{}' requires Set", (isNotIn ? "notIn" : "in"));
+      throw new RuntimeException(
+          String.format(
+              "conditionType '%s' requires Set, yours: %s",
+              (isNotIn ? "notIn" : "in"), value.getClass()));
+    }
+
+    Set<?> inValues = (Set<?>) value;
+    if (inValues.isEmpty()) {
+      log.warn("WHERE - empty in cause : {}", dbColumnName);
+      throw new RuntimeException("WHERE - empty in cause : " + dbColumnName);
+    }
+
+    String inFormatted =
+        inValues.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
+    return String.format("`%s` %s IN (%s)", dbColumnName, (isNotIn ? "NOT" : ""), inFormatted);
+  }
+
+  /** '=' 조건 문자열 생성 */
+  private String getEqualSql(final String dbColumnName, final Object value) {
+    return String.format("`%s` = %s", dbColumnName, getFormattedValue(value));
+  }
+
+  /**
+   * DB에 들어갈 값으로 변환 - 문자열은 quote - date/time 은 지정된 포맷으로 - Enum 은 ValueEnum.getValue() 또는 name() -
+   * list, set, map 은 JSON 형태 등 - 그 외엔 toString()
+   */
+  private String getFormattedValue(final Object value) {
+    if (value == null) {
+      return "null";
+    }
+    if (value instanceof String) {
+      return formatStringValue((String) value);
+    }
+    if (value instanceof Instant) {
+      return formatInstantValue((Instant) value);
+    }
+    if (value instanceof Date) {
+      return formatDateValue((Date) value);
+    }
+    if (value instanceof LocalDateTime) {
+      return formatLocalDateTimeValue((LocalDateTime) value);
+    }
+    if (value instanceof LocalDate) {
+      return formatLocalDateValue((LocalDate) value);
+    }
+    if (value instanceof OffsetDateTime) {
+      return formatOffsetDateTime((OffsetDateTime) value);
+    }
+    if (value instanceof Enum<?>) {
+      return formatEnumValue((Enum<?>) value);
+    }
+    if (value instanceof List<?>) {
+      return formatListValue((List<?>) value);
+    }
+    if (value instanceof Set<?>) {
+      return formatSetValue((Set<?>) value);
+    }
+    if (value instanceof Map<?, ?>) {
+      return formatMapValue((Map<?, ?>) value);
+    }
+
+    // 기본 (숫자, boolean 등)
+    return value.toString().replace("'", "''");
+  }
+
+  private String formatStringValue(String str) {
+    if (isISO8601String(str)) {
+      return "'" + converterInstantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+    }
+    // 일반 문자열
+    return "'" + str.replace("'", "''") + "'";
+  }
+
+  private String formatInstantValue(Instant instant) {
+    return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+  }
+
+  private String formatDateValue(Date date) {
+    return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
+  }
+
+  private String formatLocalDateTimeValue(LocalDateTime localDateTime) {
+    return "'" + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")) + "'";
+  }
+
+  private String formatLocalDateValue(LocalDate localDate) {
+    return "'" + localDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
+  }
+
+  private String formatOffsetDateTime(OffsetDateTime offsetDateTime) {
+    return "'"
+        + converterInstantToString(offsetDateTime.toInstant(), "yyyy-MM-dd HH:mm:ss.SSS")
+        + "'";
+  }
+
+  private String formatEnumValue(Enum<?> enumValue) {
+    if (enumValue instanceof ValueEnum) {
+      return "'" + ((ValueEnum) enumValue).getValue() + "'";
+    }
+    return "'" + enumValue.name() + "'";
+  }
+
+  private String formatListValue(List<?> list) {
+    String listStr =
+        list.stream()
+            .map(v -> getFormattedValue(v).replace("'", "\""))
+            .collect(Collectors.joining(", "));
+    return "'[" + listStr + "]'";
+  }
+
+  private String formatSetValue(Set<?> set) {
+    String setStr = set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
+    return "'[" + setStr + "]'";
+  }
+
+  private String formatMapValue(Map<?, ?> map) {
+    StringBuilder sb = new StringBuilder().append("\"{");
+    boolean first = true;
+    for (Map.Entry<?, ?> entry : map.entrySet()) {
+      if (!first) {
+        sb.append(", ");
+      }
+      first = false;
+      sb.append("\"")
+          .append(entry.getKey())
+          .append("\":")
+          .append(getFormattedValue(entry.getValue()));
+    }
+    return sb.append("}\"").toString();
+  }
+
+  /** Instant -> String 변환 (UTC 기준) */
+  private String converterInstantToString(final Instant instant, final String pattern) {
+    return OffsetDateTime.ofInstant(instant, ZoneId.of("UTC"))
+        .format(DateTimeFormatter.ofPattern(pattern));
+  }
+
+  /** ISO8601 형식 문자열인지 간단하게 체크. 예시: 2021-01-01T01:23:45Z / 2021-01-01T01:23:45+09:00 */
   private boolean isISO8601String(final String value) {
     int countDash = 0;
     int countColon = 0;
@@ -436,6 +542,7 @@ public class MybatisCommand {
         && (value.endsWith("Z") || countPlus == 1);
   }
 
+  /** camelCase -> snake_case */
   private static String getCamelCaseToSnakeCase(final String str) {
     StringBuilder result = new StringBuilder(str.length() * 2);
     result.append(Character.toLowerCase(str.charAt(0)));
@@ -450,6 +557,7 @@ public class MybatisCommand {
     return result.toString();
   }
 
+  /** 엔티티 객체 -> Map 변환 */
   public static Map<String, Object> toMap(final Object source) {
     final Map<String, Object> map = new HashMap<>();
     final Field[] fields = getAllFields(source.getClass());
@@ -464,26 +572,19 @@ public class MybatisCommand {
     return map;
   }
 
-  private String converterInstantToString(final Instant instant, final String pattern) {
-    return OffsetDateTime.ofInstant(instant, ZoneId.of("UTC"))
-        .format(DateTimeFormatter.ofPattern(pattern));
-  }
-
+  /** 클래스 및 부모 클래스의 모든 필드를 얻는다. */
   private static Field[] getAllFields(Class<?> clazz) {
     List<Field> fields = new ArrayList<>();
 
-    // Start with the current class and traverse all superclasses
     Class<?> currentClass = clazz;
     while (currentClass != null && currentClass != Object.class) {
       fields.addAll(Arrays.asList(currentClass.getDeclaredFields()));
       currentClass = currentClass.getSuperclass();
     }
-
     return fields.toArray(new Field[0]);
   }
 
-  // Helper methods to replace StringUtils
-
+  /** 문자열의 특정 구간을 추출 (open, close 사이) */
   private static String substringBetween(String str, String open, String close) {
     if (str == null) {
       return null;
@@ -499,6 +600,7 @@ public class MybatisCommand {
     return null;
   }
 
+  /** ':' 구분자 앞 부분 */
   private static String substringBefore(String str) {
     if (str == null) {
       return "";
@@ -510,6 +612,7 @@ public class MybatisCommand {
     return str.substring(0, pos);
   }
 
+  /** ':' 구분자 뒷 부분 */
   private static String substringAfter(String str) {
     if (str == null) {
       return "";
@@ -521,14 +624,16 @@ public class MybatisCommand {
     return str.substring(pos + SEPARATOR.length());
   }
 
-  private static String defaultString(String str, String defaultStr) {
-    return str == null ? defaultStr : str;
-  }
-
+  /** 예외 스택트레이스를 문자열로 변환 */
   private static String getStackTrace(Throwable e) {
     StringWriter sw = new StringWriter();
     PrintWriter pw = new PrintWriter(sw);
     e.printStackTrace(pw);
     return sw.toString();
+  }
+
+  /** DB Identifier wrapping, 예: `column_name` */
+  private String wrapIdentifier(final String identifier) {
+    return "`" + identifier + "`";
   }
 }
