@@ -346,6 +346,12 @@ public class MybatisCommand {
       } else {
         return "'" + str.replace("'", "''") + "'";
       }
+    } else if (value instanceof Instant) {
+      Instant instant = (Instant) value;
+      return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+    } else if (value instanceof Date) {
+      Date date = (Date) value;
+      return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
     } else if (value instanceof LocalDateTime) {
       LocalDateTime localDateTime = (LocalDateTime) value;
       return "'"
@@ -354,17 +360,9 @@ public class MybatisCommand {
     } else if (value instanceof LocalDate) {
       LocalDate localDate = (LocalDate) value;
       return "'" + localDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
-    } else if (value instanceof Date) {
-      Date date = (Date) value;
-      return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
     } else if (value instanceof OffsetDateTime) {
       OffsetDateTime offsetDateTime = (OffsetDateTime) value;
-      return "'"
-          + offsetDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSXXX"))
-          + "'";
-    } else if (value instanceof Instant) {
-      Instant instant = (Instant) value;
-      return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+      return "'" + converterInstantToString(offsetDateTime.toInstant(), "yyyy-MM-dd HH:mm:ss.SSS") + "'";
     } else if (value instanceof Enum<?>) {
       if (value instanceof ValueEnum) {
         return "'" + ((ValueEnum) value).getValue() + "'";
