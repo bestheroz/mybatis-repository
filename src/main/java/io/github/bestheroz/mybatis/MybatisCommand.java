@@ -348,7 +348,9 @@ public class MybatisCommand {
       }
     } else if (value instanceof LocalDateTime) {
       LocalDateTime localDateTime = (LocalDateTime) value;
-      return "'" + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")) + "'";
+      return "'"
+          + localDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))
+          + "'";
     } else if (value instanceof LocalDate) {
       LocalDate localDate = (LocalDate) value;
       return "'" + localDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
@@ -357,7 +359,9 @@ public class MybatisCommand {
       return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(date) + "'";
     } else if (value instanceof OffsetDateTime) {
       OffsetDateTime offsetDateTime = (OffsetDateTime) value;
-      return "'" + offsetDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSXXX")) + "'";
+      return "'"
+          + offsetDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSXXX"))
+          + "'";
     } else if (value instanceof Instant) {
       Instant instant = (Instant) value;
       return "'" + converterInstantToString(instant, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
@@ -368,15 +372,14 @@ public class MybatisCommand {
       return "'" + ((Enum<?>) value).name() + "'";
     } else if (value instanceof List<?>) {
       List<?> list = (List<?>) value;
-      String listStr = list.stream()
+      String listStr =
+          list.stream()
               .map(v -> getFormattedValue(v).replace("'", "\""))
               .collect(Collectors.joining(", "));
       return "'[" + listStr + "]'";
     } else if (value instanceof Set<?>) {
       Set<?> set = (Set<?>) value;
-      String setStr = set.stream()
-              .map(this::getFormattedValue)
-              .collect(Collectors.joining(", "));
+      String setStr = set.stream().map(this::getFormattedValue).collect(Collectors.joining(", "));
       return "'[" + setStr + "]'";
     } else if (value instanceof Map<?, ?>) {
       Map<?, ?> map = (Map<?, ?>) value;
@@ -388,9 +391,9 @@ public class MybatisCommand {
         }
         first = false;
         sb.append("\"")
-                .append(entry.getKey())
-                .append("\":")
-                .append(getFormattedValue(entry.getValue()));
+            .append(entry.getKey())
+            .append("\":")
+            .append(getFormattedValue(entry.getValue()));
       }
       return sb.append("}\"").toString();
     }
