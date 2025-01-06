@@ -44,7 +44,7 @@ Or add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.2.11</version>
+    <version>0.3.3</version>
 </dependency>
 ```
 
