@@ -34,7 +34,7 @@ Add the following dependency to your `build.gradle`:
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.2.11'
+    implementation 'io.github.bestheroz:mybatis-repository:0.3.3'
 }
 ```
 
