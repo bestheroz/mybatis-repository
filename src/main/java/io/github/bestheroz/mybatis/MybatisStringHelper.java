@@ -65,9 +65,9 @@ public class MybatisStringHelper {
       if (c == 'T') countT++;
       if (c == '+') countPlus++;
     }
-    // 예: 2023-01-02T12:34:56Z or 2023-01-02T12:34:56+09:00
+    // 예: 2025-01-02T12:34:56Z or 2025-01-02T12:34:56+09:00
     return countDash == 2
-        && countColon == 2
+        && (countColon == 2 || countColon == 3)
         && countT == 1
         && (value.endsWith("Z") || countPlus == 1);
   }
