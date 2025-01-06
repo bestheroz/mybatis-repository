@@ -13,7 +13,7 @@ public class MybatisProperties {
   public MybatisProperties() {}
 
   public void setExcludeFields(Set<String> excludeFields) {
-    MybatisProperties.excludeFields = excludeFields;
+    MybatisProperties.excludeFields = excludeFields == null ? new HashSet<>() : excludeFields;
   }
 
   public static Set<String> getExcludeFields() {
