@@ -207,8 +207,15 @@ public class MybatisClauseBuilder {
       first = false;
       sb.append("\"")
           .append(stringHelper.escapeSingleQuote(String.valueOf(entry.getKey())))
-          .append("\":")
-          .append(formatValueForSQL(entry.getValue()));
+          .append("\":");
+
+      Object value = entry.getValue();
+      if (value instanceof String) {
+        // 문자열 값인 경우 formatValueForSQL() 호출 없이 직접 큰따옴표 처리
+        sb.append("\"").append(stringHelper.escapeSingleQuote(String.valueOf(value))).append("\"");
+      } else {
+        sb.append(formatValueForSQL(value));
+      }
     }
     sb.append("}\"");
     return sb.toString();
