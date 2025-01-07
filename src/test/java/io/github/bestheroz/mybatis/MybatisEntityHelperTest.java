@@ -328,4 +328,39 @@ class MybatisEntityHelperTest {
     // then
     assertThat(firstCall).isEqualTo(secondCall).isEqualTo("test_table");
   }
+
+  // 테스트용 스택트레이스 시뮬레이션 메소드 추가
+  private void simulateStackTrace(Class<?> repositoryClass, String methodName) {
+    StackTraceElement[] stackTrace = new Throwable().getStackTrace();
+    StackTraceElement mockElement =
+        new StackTraceElement(
+            repositoryClass.getName(), methodName, repositoryClass.getSimpleName() + ".java", 1);
+    // 기존 스택트레이스의 첫번째 요소를 mock 요소로 교체
+    stackTrace[0] = mockElement;
+    new Throwable().setStackTrace(stackTrace);
+  }
+
+  @Test
+  @DisplayName("getTableName 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
+  void getTableName_WithInvalidStackTrace_ShouldThrowException() {
+    // given
+    simulateStackTrace(NoInterfaceRepository.class, "invalidMethod");
+
+    // when & then
+    assertThatThrownBy(() -> entityHelper.getTableName())
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("stackTraceElements is required");
+  }
+
+  @Test
+  @DisplayName("getEntityFields 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
+  void getEntityFields_WithInvalidStackTrace_ShouldThrowException() {
+    // given
+    simulateStackTrace(NoInterfaceRepository.class, "invalidMethod");
+
+    // when & then
+    assertThatThrownBy(() -> entityHelper.getEntityFields())
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("stackTraceElements is required");
+  }
 }
