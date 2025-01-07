@@ -42,17 +42,17 @@ class MybatisAutoConfigurationTest {
     @Test
     @DisplayName("PostConstruct 어노테이션이 붙은 초기화 메서드로 exclude fields를 로깅한다")
     void shouldLogExcludeFieldsOnInitialization() {
-      // Given
+      // given
       Set<String> excludeFields = new HashSet<>();
       excludeFields.add("testField1");
       excludeFields.add("testField2");
       excludeFields = Collections.unmodifiableSet(excludeFields);
       mybatisProperties.setExcludeFields(excludeFields);
 
-      // When
+      // when
       mybatisAutoConfiguration.init();
 
-      // Then
+      // then
       assertThat(MybatisProperties.getExcludeFields())
           .hasSize(2)
           .contains("testField1", "testField2");
@@ -66,10 +66,10 @@ class MybatisAutoConfigurationTest {
     @Test
     @DisplayName("새로운 MybatisProperties 인스턴스를 생성하여 반환한다")
     void shouldCreateNewMybatisPropertiesInstance() {
-      // When
+      // when
       MybatisProperties result = mybatisAutoConfiguration.mybatisProperties();
 
-      // Then
+      // then
       assertThat(result).isNotNull().isInstanceOf(MybatisProperties.class);
     }
   }
@@ -77,21 +77,21 @@ class MybatisAutoConfigurationTest {
   @Test
   @DisplayName("Configuration 어노테이션이 적용되어 있다")
   void shouldHaveConfigurationAnnotation() {
-    // When
+    // when
     Configuration annotation = MybatisAutoConfiguration.class.getAnnotation(Configuration.class);
 
-    // Then
+    // then
     assertThat(annotation).isNotNull();
   }
 
   @Test
   @DisplayName("EnableConfigurationProperties 어노테이션이 MybatisProperties를 대상으로 적용되어 있다")
   void shouldHaveEnableConfigurationPropertiesAnnotation() {
-    // When
+    // when
     EnableConfigurationProperties annotation =
         MybatisAutoConfiguration.class.getAnnotation(EnableConfigurationProperties.class);
 
-    // Then
+    // then
     assertThat(annotation).isNotNull();
     assertThat(annotation.value()).contains(MybatisProperties.class);
   }
