@@ -32,7 +32,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.3.3'
+    implementation 'io.github.bestheroz:mybatis-repository:0.3.4'
 }
 ```
 
@@ -42,7 +42,7 @@ dependencies {
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.3.3</version>
+    <version>0.3.4</version>
 </dependency>
 ```
 
