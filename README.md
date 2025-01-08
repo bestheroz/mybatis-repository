@@ -1,7 +1,7 @@
 # MyBatis Repository
 
-![GitHub top language](https://img.shields.io/github/languages/top/bestheroz/mybatis-repository)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.bestheroz/mybatis-repository)](https://search.maven.org/artifact/io.github.bestheroz/mybatis-repository)
+![GitHub top language](https://img.shields.io/github/languages/top/bestheroz/mybatis-repository)
 ![Coverage](.github/badges/jacoco.svg)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
 
