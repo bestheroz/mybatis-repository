@@ -3,6 +3,7 @@ package io.github.bestheroz.mybatis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -39,6 +40,8 @@ class MybatisCommandTest {
     mybatisProperties = new MybatisProperties();
     Set<String> excludeFields = MybatisProperties.getExcludeFields();
     excludeFields.add("__$hits$__");
+    excludeFields.add("$jacocoData");
+
     originalExcludeFields = new HashSet<>(excludeFields);
   }
 
@@ -167,8 +170,7 @@ class MybatisCommandTest {
     TestEntity entity = new TestEntity("test", 123);
 
     when(entityHelper.getTableName(TestEntity.class)).thenReturn("test_entity");
-    when(entityHelper.getColumnName(eq("name"))).thenAnswer(i -> "name");
-    when(entityHelper.getColumnName(eq("value"))).thenAnswer(i -> "value");
+    when(entityHelper.getColumnName(anyString())).thenAnswer(i -> i.getArgument(0));
     when(stringHelper.wrapIdentifier(anyString())).thenAnswer(i -> "`" + i.getArgument(0) + "`");
     when(clauseBuilder.formatValueForSQL(eq("test"))).thenAnswer(i -> "`test`");
     when(clauseBuilder.formatValueForSQL(eq(123))).thenAnswer(i -> "123");

@@ -47,6 +47,7 @@ class MybatisEntityHelperTest {
     mybatisProperties = new MybatisProperties();
     Set<String> excludeFields = MybatisProperties.getExcludeFields();
     excludeFields.add("__$hits$__");
+    excludeFields.add("$jacocoData");
     originalExcludeFields = new HashSet<>(excludeFields);
   }
 
@@ -293,6 +294,7 @@ class MybatisEntityHelperTest {
     Set<String> excludeFields = new HashSet<>();
     excludeFields.add("name");
     excludeFields.add("__$hits$__");
+    excludeFields.add("$jacocoData");
     excludeFields = Collections.unmodifiableSet(excludeFields);
     mybatisProperties.setExcludeFields(excludeFields);
 
