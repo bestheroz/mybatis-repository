@@ -52,6 +52,16 @@ public class MybatisCommand {
     this.clauseBuilder = new MybatisClauseBuilder(stringHelper, entityHelper);
   }
 
+  // 기본 생성자 제거하고 의존성 주입을 위한 생성자만 남김
+  public MybatisCommand(
+      MybatisEntityHelper entityHelper,
+      MybatisStringHelper stringHelper,
+      MybatisClauseBuilder clauseBuilder) {
+    this.entityHelper = entityHelper;
+    this.stringHelper = stringHelper;
+    this.clauseBuilder = clauseBuilder;
+  }
+
   // ===========================================
   // SELECT
   // ===========================================
