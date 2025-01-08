@@ -356,7 +356,7 @@ class MybatisClauseBuilderTest {
       // given
       when(stringHelper.substringBefore("userName:eq")).thenReturn("userName");
       when(stringHelper.substringAfter("userName:eq")).thenReturn("eq");
-      when(stringHelper.escapeSingleQuote("test")).thenReturn("test");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
       when(entityHelper.getColumnName("userName")).thenReturn("user_name");
 
       Map<String, Object> conditions = new HashMap<>();
@@ -367,6 +367,304 @@ class MybatisClauseBuilderTest {
 
       // then
       assertThat(sql.toString()).contains("WHERE (`user_name` = 'test')");
+    }
+
+    @Test
+    @DisplayName("EQ 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenEqCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("name:eq", "test");
+
+      when(stringHelper.substringBefore("name:eq")).thenReturn("name");
+      when(stringHelper.substringAfter("name:eq")).thenReturn("eq");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("name")).thenReturn("name");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`name` = 'test')");
+    }
+
+    @Test
+    @DisplayName("IN 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenInCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Set<String> values = new HashSet<>();
+      values.add("value1");
+      values.add("value2");
+
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("type:in", values);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("type");
+      when(stringHelper.substringAfter(anyString())).thenReturn("in");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("type")).thenReturn("type");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString())
+          .contains("WHERE (`type`  IN (")
+          .contains("'value1'")
+          .contains("'value2'");
+    }
+
+    @Test
+    @DisplayName("NULL 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenNullCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("deletedAt:null", null);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("deletedAt");
+      when(stringHelper.substringAfter(anyString())).thenReturn("null");
+      when(entityHelper.getColumnName("deletedAt")).thenReturn("deleted_at");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`deleted_at` IS NULL)");
+    }
+
+    @Test
+    @DisplayName("CONTAINS 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenContainsCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("description:contains", "test");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("description");
+      when(stringHelper.substringAfter(anyString())).thenReturn("contains");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("description")).thenReturn("description");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (INSTR(`description`, 'test') > 0)");
+    }
+
+    @Test
+    @DisplayName("GT 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenGtCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("createdAt:gt", Instant.parse("2024-01-01T00:00:00Z"));
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("createdAt");
+      when(stringHelper.substringAfter(anyString())).thenReturn("gt");
+      when(entityHelper.getColumnName("createdAt")).thenReturn("created_at");
+      when(stringHelper.instantToString(any(Instant.class), anyString()))
+          .thenReturn("2024-01-01 00:00:00.000");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`created_at` > '2024-01-01 00:00:00.000')");
+    }
+
+    @Test
+    @DisplayName("NE 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenNeCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("status:ne", "INACTIVE");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("status");
+      when(stringHelper.substringAfter(anyString())).thenReturn("ne");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("status")).thenReturn("status");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`status` <> 'INACTIVE')");
+    }
+
+    @Test
+    @DisplayName("NOT 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenNotCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("status:not", "DELETED");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("status");
+      when(stringHelper.substringAfter(anyString())).thenReturn("not");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("status")).thenReturn("status");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`status` <> 'DELETED')");
+    }
+
+    @Test
+    @DisplayName("NOT_IN 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenNotInCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Set<String> values = new HashSet<>();
+      values.add("DRAFT");
+      values.add("PENDING");
+
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("status:notIn", values);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("status");
+      when(stringHelper.substringAfter(anyString())).thenReturn("notIn");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("status")).thenReturn("status");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`status` NOT IN ('DRAFT', 'PENDING'))");
+    }
+
+    @Test
+    @DisplayName("IS_NOT_NULL 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenIsNotNullCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("deletedAt:notNull", null);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("deletedAt");
+      when(stringHelper.substringAfter(anyString())).thenReturn("notNull");
+      when(entityHelper.getColumnName("deletedAt")).thenReturn("deleted_at");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`deleted_at` IS NOT NULL)");
+    }
+
+    @Test
+    @DisplayName("NOT_CONTAINS 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenNotContainsCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("description:notContains", "spam");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("description");
+      when(stringHelper.substringAfter(anyString())).thenReturn("notContains");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("description")).thenReturn("description");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (INSTR(`description`, 'spam') = 0)");
+    }
+
+    @Test
+    @DisplayName("STARTS_WITH 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenStartsWithCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("email:startsWith", "admin");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("email");
+      when(stringHelper.substringAfter(anyString())).thenReturn("startsWith");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("email")).thenReturn("email");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (INSTR(`email`, 'admin') = 1)");
+    }
+
+    @Test
+    @DisplayName("ENDS_WITH 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenEndsWithCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("email:endsWith", "@gmail.com");
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("email");
+      when(stringHelper.substringAfter(anyString())).thenReturn("endsWith");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("email")).thenReturn("email");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString())
+          .contains("WHERE (RIGHT(`email`, CHAR_LENGTH('@gmail.com')) = '@gmail.com')");
+    }
+
+    @Test
+    @DisplayName("LT 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenLtCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("price:lt", 1000);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("price");
+      when(stringHelper.substringAfter(anyString())).thenReturn("lt");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("price")).thenReturn("price");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`price` < 1000)");
+    }
+
+    @Test
+    @DisplayName("LTE 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenLteCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("price:lte", 1000);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("price");
+      when(stringHelper.substringAfter(anyString())).thenReturn("lte");
+      when(stringHelper.escapeSingleQuote(anyString())).thenAnswer(i -> i.getArgument(0));
+      when(entityHelper.getColumnName("price")).thenReturn("price");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`price` <= 1000)");
+    }
+
+    @Test
+    @DisplayName("GTE 조건으로 WHERE 절이 정상 생성되어야 한다")
+    void whenGteCondition_thenBuildWhereClauseCorrectly() {
+      // given
+      Instant now = Instant.parse("2024-01-01T00:00:00Z");
+      Map<String, Object> whereConditions = new HashMap<>();
+      whereConditions.put("createdAt:gte", now);
+
+      when(stringHelper.substringBefore(anyString())).thenReturn("createdAt");
+      when(stringHelper.substringAfter(anyString())).thenReturn("gte");
+      when(entityHelper.getColumnName("createdAt")).thenReturn("created_at");
+      when(stringHelper.instantToString(any(Instant.class), anyString()))
+          .thenReturn("2024-01-01 00:00:00.000");
+
+      // when
+      clauseBuilder.buildWhereClause(sql, whereConditions);
+
+      // then
+      assertThat(sql.toString()).contains("WHERE (`created_at` >= '2024-01-01 00:00:00.000')");
     }
   }
 
