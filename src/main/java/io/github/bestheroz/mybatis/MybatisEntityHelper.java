@@ -35,14 +35,14 @@ public class MybatisEntityHelper {
     return tableName;
   }
 
-  /** 엔티티 클래스의 모든 (Exclude되지 않은) 필드 이름 집합 */
+  /** 엔티티 클래스의 모든 (@Column이 붙은) 필드 이름 집합 */
   protected Set<String> getEntityFields(final Class<?> entityClass) {
     return Stream.of(getAllNonExcludedFields(entityClass))
         .map(Field::getName)
         .collect(Collectors.toSet());
   }
 
-  /** 모든 필드를 끌어와서 ExcludeFields 필터링 */
+  /** 모든 필드를 순회하여, @Column 어노테이션이 붙은 필드만 필터링 */
   protected static Field[] getAllNonExcludedFields(final Class<?> clazz) {
     if (MybatisCommand.FIELD_CACHE.containsKey(clazz)) {
       return MybatisCommand.FIELD_CACHE.get(clazz);
@@ -57,9 +57,10 @@ public class MybatisEntityHelper {
 
     Field[] filtered =
         allFields.stream()
-            .filter(field -> MybatisProperties.isProcessableColumn(field.getName()))
+            .filter(field -> field.isAnnotationPresent(Column.class))
             .distinct()
             .toArray(Field[]::new);
+
     MybatisCommand.FIELD_CACHE.put(clazz, filtered);
     return filtered;
   }
@@ -77,7 +78,6 @@ public class MybatisEntityHelper {
     } catch (Exception e) {
       // 무시
     }
-    // @Column 없으면 CamelCase→snake_case 로 변환
     return stringHelper.getCamelCaseToSnakeCase(fieldName);
   }
 

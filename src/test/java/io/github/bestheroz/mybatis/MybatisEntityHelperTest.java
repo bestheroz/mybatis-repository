@@ -36,7 +36,6 @@ class MybatisEntityHelperTest {
   static class TestEntity {}
 
   private static Set<String> originalExcludeFields;
-  private MybatisProperties mybatisProperties;
 
   @Mock private MybatisStringHelper stringHelper;
   private MybatisEntityHelper entityHelper;
@@ -44,16 +43,10 @@ class MybatisEntityHelperTest {
   @BeforeEach
   void setUp() {
     entityHelper = new MybatisEntityHelper(stringHelper);
-    mybatisProperties = new MybatisProperties();
-    Set<String> excludeFields = MybatisProperties.getExcludeFields();
-    excludeFields.add("__$hits$__");
-    excludeFields.add("$jacocoData");
-    originalExcludeFields = new HashSet<>(excludeFields);
   }
 
   @AfterEach
   void tearDown() {
-    mybatisProperties.setExcludeFields(originalExcludeFields);
     MybatisCommand.FIELD_CACHE.clear();
   }
 
