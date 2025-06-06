@@ -347,36 +347,6 @@ class MybatisEntityHelperTest {
   }
 
   @Test
-  @DisplayName("getTableName 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
-  void getTableName_WithInvalidStackTrace_ShouldThrowException() {
-    // when & then
-    assertThatThrownBy(() -> entityHelper.getTableName())
-        .isInstanceOf(MybatisRepositoryException.class)
-        .hasMessageContaining("stackTraceElements is required");
-  }
-
-  @Test
-  @DisplayName("getEntityFields 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
-  void getEntityFields_WithInvalidStackTrace_ShouldThrowException() {
-    // when & then
-    assertThatThrownBy(() -> entityHelper.getEntityFields())
-        .isInstanceOf(MybatisRepositoryException.class)
-        .hasMessageContaining("stackTraceElements is required");
-  }
-
-  @Test
-  @DisplayName("스택트레이스 기반 getColumnName 메서드에서 예외 처리 확인")
-  void getColumnName_WithInvalidStackTrace_ShouldThrowException() {
-    // given
-    String fieldName = "userName";
-
-    // when & then
-    assertThatThrownBy(() -> entityHelper.getColumnName(fieldName))
-        .isInstanceOf(MybatisRepositoryException.class)
-        .hasMessageContaining("stackTraceElements is required");
-  }
-
-  @Test
   @DisplayName("클래스를 직접 전달하는 getColumnName 메서드 테스트")
   void getColumnName_WithDirectClass_ShouldWork() {
     // given

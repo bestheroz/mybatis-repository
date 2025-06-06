@@ -30,8 +30,15 @@ public class MybatisClauseBuilder {
     }
   }
 
-  /** 주어진 whereConditions를 순회하며, SQL에 WHERE 절을 추가한다. */
-  protected void buildWhereClause(final SQL sql, final Map<String, Object> whereConditions) {
+  /**
+   * 주어진 whereConditions를 순회하며, SQL에 WHERE 절을 추가한다.
+   *
+   * @param sql MyBatis SQL 빌더
+   * @param whereConditions 키: 필드명(:조건타입), 값: 필터 값
+   * @param entityClass 엔티티 클래스 (예: User.class)
+   */
+  protected void buildWhereClause(
+      final SQL sql, final Map<String, Object> whereConditions, final Class<?> entityClass) {
     if (whereConditions == null) {
       return;
     }
@@ -47,50 +54,78 @@ public class MybatisClauseBuilder {
         conditionType = "eq"; // 기본 eq
       }
 
-      // DB Column
-      String dbColumnName = entityHelper.getColumnName(columnName);
+      // DB Column (entityClass를 함께 넘김)
+      String dbColumnName = entityHelper.getColumnName(entityClass, columnName);
 
       // Condition 선택 후 빌드
       sql.WHERE(Condition.from(conditionType).buildClause(dbColumnName, value, this));
     }
   }
 
-  /** SELECT 절을 구성한다. distinctColumns와 targetColumns 모두 비어 있으면 entity의 모든 필드를 SELECT. */
+  /**
+   * SELECT 절을 구성한다. distinctColumns와 targetColumns 모두 비어 있으면 entity의 모든 필드를 SELECT.
+   *
+   * @param sql MyBatis SQL 빌더
+   * @param distinctColumns DISTINCT 처리할 필드명 집합 (자바 필드명)
+   * @param targetColumns 실제 조회할 필드명 집합 (자바 필드명)
+   * @param entityClass 엔티티 클래스 (예: User.class)
+   */
   protected void appendSelectColumns(
-      SQL sql, Set<String> distinctColumns, Set<String> targetColumns) {
+      final SQL sql,
+      final Set<String> distinctColumns,
+      final Set<String> targetColumns,
+      final Class<?> entityClass) {
 
     // 둘 다 비었으면, 전체 필드 SELECT
-    if (distinctColumns.isEmpty() && targetColumns.isEmpty()) {
-      for (String field : entityHelper.getEntityFields()) {
-        sql.SELECT(stringHelper.wrapIdentifier(entityHelper.getColumnName(field)));
+    if ((distinctColumns == null || distinctColumns.isEmpty())
+        && (targetColumns == null || targetColumns.isEmpty())) {
+      for (String field : entityHelper.getEntityFields(entityClass)) {
+        sql.SELECT(stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, field)));
       }
       return;
     }
 
     // DISTINCT 컬럼
-    for (String distinctCol : distinctColumns) {
-      sql.SELECT_DISTINCT(stringHelper.wrapIdentifier(entityHelper.getColumnName(distinctCol)));
+    if (distinctColumns != null) {
+      for (String distinctCol : distinctColumns) {
+        sql.SELECT_DISTINCT(
+            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, distinctCol)));
+      }
     }
 
     // 일반 컬럼
-    for (String targetCol : targetColumns) {
-      if (!distinctColumns.contains(targetCol)) {
-        sql.SELECT(stringHelper.wrapIdentifier(entityHelper.getColumnName(targetCol)));
+    if (targetColumns != null) {
+      for (String targetCol : targetColumns) {
+        if (distinctColumns == null || !distinctColumns.contains(targetCol)) {
+          sql.SELECT(
+              stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, targetCol)));
+        }
       }
     }
   }
 
-  /** ORDER BY 절 구성 */
-  protected void appendOrderBy(SQL sql, List<String> orderByConditions) {
+  /**
+   * ORDER BY 절 구성
+   *
+   * @param sql MyBatis SQL 빌더
+   * @param orderByConditions 정렬 조건 리스트 (예: ["-createdAt", "name"])
+   * @param entityClass 엔티티 클래스 (예: User.class)
+   */
+  protected void appendOrderBy(
+      final SQL sql, final List<String> orderByConditions, final Class<?> entityClass) {
     if (orderByConditions == null) {
       return;
     }
     for (String condition : orderByConditions) {
       if (condition.startsWith("-")) {
         String realCol = condition.substring(1);
-        sql.ORDER_BY(stringHelper.wrapIdentifier(entityHelper.getColumnName(realCol)) + " DESC");
+        sql.ORDER_BY(
+            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, realCol))
+                + " DESC");
       } else {
-        sql.ORDER_BY(stringHelper.wrapIdentifier(entityHelper.getColumnName(condition)) + " ASC");
+        sql.ORDER_BY(
+            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, condition))
+                + " ASC");
       }
     }
   }
@@ -107,7 +142,8 @@ public class MybatisClauseBuilder {
   // ===========================================
   // Condition별 빌드 메서드
   // ===========================================
-  protected String buildInClause(String dbColumnName, Object value, boolean isNotIn) {
+  protected String buildInClause(
+      final String dbColumnName, final Object value, final boolean isNotIn) {
     if (!(value instanceof Set)) {
       log.warn("conditionType '{}' requires Set", (isNotIn ? "notIn" : "in"));
       throw new MybatisRepositoryException(
@@ -116,7 +152,8 @@ public class MybatisClauseBuilder {
               (isNotIn ? "notIn" : "in"), value == null ? null : value.getClass()));
     }
 
-    Set<?> inValues = (Set<?>) value;
+    @SuppressWarnings("unchecked")
+    Set<Object> inValues = (Set<Object>) value;
     if (inValues.isEmpty()) {
       log.warn("WHERE - empty in clause : {}", dbColumnName);
       throw new MybatisRepositoryException("WHERE - empty in clause : " + dbColumnName);
@@ -166,7 +203,7 @@ public class MybatisClauseBuilder {
     return stringHelper.escapeSingleQuote(value.toString());
   }
 
-  private String formatStringValue(String str) {
+  private String formatStringValue(final String str) {
     // ISO8601이면 Instant로 변환
     if (stringHelper.isISO8601String(str)) {
       return "'"
@@ -177,9 +214,8 @@ public class MybatisClauseBuilder {
     return "'" + stringHelper.escapeSingleQuote(str) + "'";
   }
 
-  private String formatEnumValue(Enum<?> enumValue) {
+  private String formatEnumValue(final Enum<?> enumValue) {
     if (enumValue instanceof ValueEnum) {
-      // ValueEnum 처리
       ValueEnum ve = (ValueEnum) enumValue;
       return "'" + ve.getValue() + "'";
     }
@@ -187,16 +223,16 @@ public class MybatisClauseBuilder {
     return "'" + enumValue.name() + "'";
   }
 
-  private String formatCollectionValue(Collection<?> collection) {
+  private String formatCollectionValue(final Collection<?> collection) {
     // 예: '[val1, val2, val3]' 형태
     String joined =
         collection.stream()
-            .map(v -> formatValueForSQL(v).replace("'", "\"")) // 내부 문자열은 " 로 치환
+            .map(v -> formatValueForSQL(v).replace("'", "\""))
             .collect(Collectors.joining(", "));
     return "'[" + joined + "]'";
   }
 
-  private String formatMapValue(Map<?, ?> map) {
+  private String formatMapValue(final Map<?, ?> map) {
     // 예: "{\"key1\":val1, \"key2\":val2, ...}"
     StringBuilder sb = new StringBuilder().append("\"{");
     boolean first = true;
@@ -209,12 +245,11 @@ public class MybatisClauseBuilder {
           .append(stringHelper.escapeSingleQuote(String.valueOf(entry.getKey())))
           .append("\":");
 
-      Object value = entry.getValue();
-      if (value instanceof String) {
-        // 문자열 값인 경우 formatValueForSQL() 호출 없이 직접 큰따옴표 처리
-        sb.append("\"").append(stringHelper.escapeSingleQuote(String.valueOf(value))).append("\"");
+      Object val = entry.getValue();
+      if (val instanceof String) {
+        sb.append("\"").append(stringHelper.escapeSingleQuote(String.valueOf(val))).append("\"");
       } else {
-        sb.append(formatValueForSQL(value));
+        sb.append(formatValueForSQL(val));
       }
     }
     sb.append("}\"");

@@ -1,8 +1,5 @@
 package io.github.bestheroz.mybatis;
 
-import static io.github.bestheroz.mybatis.MybatisCommand.*;
-
-import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Table;
 import java.lang.reflect.Field;
@@ -21,162 +18,75 @@ public class MybatisEntityHelper {
     this.stringHelper = stringHelper;
   }
 
-  private Class<?> getEntityClass() {
-    try {
-      // 1) Throwable.getStackTrace() 결과가 null이거나 비어 있으면 예외
-      StackTraceElement[] stackTraceElements = new Throwable().getStackTrace();
-      if (stackTraceElements == null || stackTraceElements.length == 0) {
-        throw new MybatisRepositoryException("stackTraceElements is required");
-      }
-
-      // 2) null 검사, isValidStackTraceElement 판별, getClassFromStackTraceElement 호출
-      return Arrays.stream(stackTraceElements)
-          // StackTraceElement가 null일 수 있으므로 필터링
-          .filter(Objects::nonNull)
-          // 유효한 스택 프레임인지 확인
-          .filter(this::isValidStackTraceElement)
-          // 첫 번째 유효한 요소가 있으면 클래스 추출
-          .findFirst()
-          .map(
-              element -> {
-                try {
-                  Class<?> clazz = getClassFromStackTraceElement(element);
-                  // getClassFromStackTraceElement이 null을 리턴할 수도 있으므로 검사
-                  if (clazz == null) {
-                    throw new MybatisRepositoryException(
-                        "Derived class from StackTraceElement is null: " + element);
-                  }
-                  return clazz;
-                } catch (MybatisRepositoryException e) {
-                  // 이미 MybatisRepositoryException인 경우 그대로 던짐
-                  throw e;
-                } catch (Exception e) {
-                  // Class.forName 등에서 발생할 수 있는 예외를 래핑
-                  throw new MybatisRepositoryException(
-                      "Failed to load class from stack trace element: " + element, e);
-                }
-              })
-          // 유효한 스택 프레임을 못 찾은 경우 예외
-          .orElseThrow(() -> new MybatisRepositoryException("No valid stack trace element found"));
-    } catch (MybatisRepositoryException e) {
-      // 이미 래핑된 예외는 그대로 던짐
-      throw e;
-    } catch (Exception e) {
-      // 그 외의 예기치 못한 예외도 모두 MybatisRepositoryException으로 래핑
-      throw new MybatisRepositoryException("Unexpected error in getEntityClass()", e);
-    }
-  }
-
-  private boolean isValidStackTraceElement(final StackTraceElement element) {
-    try {
-      Class<?> clazz = Class.forName(element.getClassName());
-      return METHOD_LIST.contains(element.getMethodName())
-          && clazz.getInterfaces().length > 0
-          && clazz.getInterfaces()[0].getGenericInterfaces().length > 0;
-    } catch (ClassNotFoundException e) {
-      log.warn(MybatisStringHelper.getStackTrace(e));
-      return false;
-    }
-  }
-
-  private Class<?> getClassFromStackTraceElement(final StackTraceElement element) {
-    try {
-      Class<?> clazz = Class.forName(element.getClassName());
-      String genericInterface = clazz.getInterfaces()[0].getGenericInterfaces()[0].getTypeName();
-      String className = stringHelper.substringBetween(genericInterface, "<", ">");
-      return Class.forName(className);
-    } catch (ClassNotFoundException e) {
-      log.warn(MybatisStringHelper.getStackTrace(e));
-      throw new MybatisRepositoryException("Failed::ClassNotFoundException", e);
-    }
-  }
-
-  /** 현재 Entity class 에 매핑된 Table name */
-  protected String getTableName() {
-    return getTableName(getEntityClass());
-  }
-
-  /** 특정 class 에 매핑된 Table name */
+  /** 특정 클래스에 매핑된 Table name */
   protected String getTableName(final Class<?> entityClass) {
-    if (TABLE_NAME_CACHE.containsKey(entityClass)) {
-      return TABLE_NAME_CACHE.get(entityClass);
+    if (MybatisCommand.TABLE_NAME_CACHE.containsKey(entityClass)) {
+      return MybatisCommand.TABLE_NAME_CACHE.get(entityClass);
     }
-
-    Table tableAnnotation = entityClass.getAnnotation(Table.class);
+    Table ann = entityClass.getAnnotation(Table.class);
     String tableName;
-    if (tableAnnotation != null && !tableAnnotation.name().isEmpty()) {
-      tableName = tableAnnotation.name();
+    if (ann != null && !ann.name().isEmpty()) {
+      tableName = ann.name();
     } else {
       tableName = stringHelper.getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
     }
-
-    TABLE_NAME_CACHE.put(entityClass, tableName);
+    MybatisCommand.TABLE_NAME_CACHE.put(entityClass, tableName);
     return tableName;
   }
 
-  protected Set<String> getEntityFields() {
-    return getEntityFields(getEntityClass());
-  }
-
-  protected <T> Set<String> getEntityFields(final Class<T> entityClass) {
+  /** 엔티티 클래스의 모든 (Exclude되지 않은) 필드 이름 집합 */
+  protected Set<String> getEntityFields(final Class<?> entityClass) {
     return Stream.of(getAllNonExcludedFields(entityClass))
         .map(Field::getName)
         .collect(Collectors.toSet());
   }
 
-  protected static Field[] getAllNonExcludedFields(Class<?> clazz) {
-    if (FIELD_CACHE.containsKey(clazz)) {
-      return FIELD_CACHE.get(clazz);
+  /** 모든 필드를 끌어와서 ExcludeFields 필터링 */
+  protected static Field[] getAllNonExcludedFields(final Class<?> clazz) {
+    if (MybatisCommand.FIELD_CACHE.containsKey(clazz)) {
+      return MybatisCommand.FIELD_CACHE.get(clazz);
     }
 
     List<Field> allFields = new ArrayList<>();
-    Class<?> currentClass = clazz;
-    while (currentClass != null && currentClass != Object.class) {
-      allFields.addAll(Arrays.asList(currentClass.getDeclaredFields()));
-      currentClass = currentClass.getSuperclass();
+    Class<?> current = clazz;
+    while (current != null && current != Object.class) {
+      allFields.addAll(Arrays.asList(current.getDeclaredFields()));
+      current = current.getSuperclass();
     }
 
-    Field[] fieldArray =
+    Field[] filtered =
         allFields.stream()
             .filter(field -> !MybatisProperties.getExcludeFields().contains(field.getName()))
             .distinct()
             .toArray(Field[]::new);
-    FIELD_CACHE.put(clazz, fieldArray);
-    return fieldArray;
+    MybatisCommand.FIELD_CACHE.put(clazz, filtered);
+    return filtered;
   }
 
-  protected String getColumnName(String fieldName) {
-    return getColumnName(getEntityClass(), fieldName);
-  }
-
-  protected String getColumnName(Class<?> entityClass, String fieldName) {
-    return getColumnNameFromField(entityClass, fieldName);
-  }
-
-  private String getColumnNameFromField(Class<?> entityClass, String fieldName) {
+  /** 특정 엔티티 클래스 + 자바 필드명을 받아서 DB 컬럼명으로 변환 */
+  protected String getColumnName(final Class<?> entityClass, final String fieldName) {
     try {
       Field field = findFieldInClassHierarchy(entityClass, fieldName);
       if (field != null) {
-        Column columnAnnotation = field.getAnnotation(Column.class);
-        if (columnAnnotation != null && !columnAnnotation.name().isEmpty()) {
-          return columnAnnotation.name();
+        Column colAnn = field.getAnnotation(Column.class);
+        if (colAnn != null && !colAnn.name().isEmpty()) {
+          return colAnn.name();
         }
       }
     } catch (Exception e) {
-      // ignore
+      // 무시
     }
-
-    // @Column 어노테이션이 없거나 name이 비어있으면 기본 변환 규칙 적용
+    // @Column 없으면 CamelCase→snake_case 로 변환
     return stringHelper.getCamelCaseToSnakeCase(fieldName);
   }
 
   private Field findFieldInClassHierarchy(Class<?> clazz, String fieldName) {
-    Class<?> currentClass = clazz;
-    while (currentClass != null && currentClass != Object.class) {
+    Class<?> curr = clazz;
+    while (curr != null && curr != Object.class) {
       try {
-        return currentClass.getDeclaredField(fieldName);
+        return curr.getDeclaredField(fieldName);
       } catch (NoSuchFieldException e) {
-        currentClass = currentClass.getSuperclass();
+        curr = curr.getSuperclass();
       }
     }
     return null;

@@ -6,10 +6,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.ibatis.annotations.*;
+import org.apache.ibatis.builder.annotation.ProviderContext;
 
 public interface MybatisRepository<T> {
   default List<T> getItems() {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -20,6 +22,7 @@ public interface MybatisRepository<T> {
 
   default List<T> getItemsLimitOffset(final Integer limit, final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -30,6 +33,7 @@ public interface MybatisRepository<T> {
 
   default List<T> getItemsOrderBy(final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -41,6 +45,7 @@ public interface MybatisRepository<T> {
   default List<T> getItemsOrderByLimitOffset(
       final List<String> orderByConditions, final Integer limit, final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -51,6 +56,7 @@ public interface MybatisRepository<T> {
 
   default List<T> getItemsByMap(final Map<String, Object> whereConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -62,6 +68,7 @@ public interface MybatisRepository<T> {
   default List<T> getItemsByMapLimitOffset(
       final Map<String, Object> whereConditions, final Integer limit, final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -73,6 +80,7 @@ public interface MybatisRepository<T> {
   default List<T> getItemsByMapOrderBy(
       final Map<String, Object> whereConditions, final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -87,6 +95,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -97,6 +106,7 @@ public interface MybatisRepository<T> {
 
   default List<T> getDistinctItems(final Set<String> distinctColumns) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -108,6 +118,7 @@ public interface MybatisRepository<T> {
   default List<T> getDistinctItemsLimitOffset(
       final Set<String> distinctColumns, final Integer limit, final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -119,6 +130,7 @@ public interface MybatisRepository<T> {
   default List<T> getDistinctItemsOrderBy(
       final Set<String> distinctColumns, final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -133,6 +145,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         Collections.emptyMap(),
@@ -144,6 +157,7 @@ public interface MybatisRepository<T> {
   default List<T> getDistinctItemsByMap(
       final Set<String> distinctColumns, final Map<String, Object> whereConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -158,6 +172,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -171,6 +186,7 @@ public interface MybatisRepository<T> {
       final Map<String, Object> whereConditions,
       final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -186,6 +202,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         distinctColumns == null ? Collections.emptySet() : distinctColumns,
         Collections.emptySet(),
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -196,6 +213,7 @@ public interface MybatisRepository<T> {
 
   default List<T> getTargetItems(final Set<String> targetColumns) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         Collections.emptyMap(),
@@ -207,6 +225,7 @@ public interface MybatisRepository<T> {
   default List<T> getTargetItemsLimitOffset(
       final Set<String> targetColumns, final Integer limit, final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         Collections.emptyMap(),
@@ -218,6 +237,7 @@ public interface MybatisRepository<T> {
   default List<T> getTargetItemsOrderBy(
       final Set<String> targetColumns, final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         Collections.emptyMap(),
@@ -232,6 +252,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         Collections.emptyMap(),
@@ -243,6 +264,7 @@ public interface MybatisRepository<T> {
   default List<T> getTargetItemsByMap(
       final Set<String> targetColumns, final Map<String, Object> whereConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -257,6 +279,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -270,6 +293,7 @@ public interface MybatisRepository<T> {
       final Map<String, Object> whereConditions,
       final List<String> orderByConditions) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -285,6 +309,7 @@ public interface MybatisRepository<T> {
       final Integer limit,
       final Integer offset) {
     return this.getDistinctAndTargetItemsByMapOrderByLimitOffset(
+        null,
         Collections.emptySet(),
         targetColumns == null ? Collections.emptySet() : targetColumns,
         whereConditions == null ? Collections.emptyMap() : whereConditions,
@@ -295,6 +320,7 @@ public interface MybatisRepository<T> {
 
   @SelectProvider(type = MybatisCommand.class, method = MybatisCommand.SELECT_ITEMS)
   List<T> getDistinctAndTargetItemsByMapOrderByLimitOffset(
+      ProviderContext context,
       final Set<String> distinctColumns,
       final Set<String> targetColumns,
       final Map<String, Object> whereConditions,
@@ -303,49 +329,52 @@ public interface MybatisRepository<T> {
       final Integer offset);
 
   @SelectProvider(type = MybatisCommand.class, method = MybatisCommand.SELECT_ITEM_BY_MAP)
-  Optional<T> getItemByMap(final Map<String, Object> whereConditions);
+  Optional<T> getItemByMap(ProviderContext context, final Map<String, Object> whereConditions);
 
   default Optional<T> getItemById(final Long id) {
-    return this.getItemByMap(Collections.singletonMap("id", id));
+    return this.getItemByMap(null, Collections.singletonMap("id", id));
   }
 
   default long countAll() {
-    return this.countByMap(Collections.emptyMap());
+    return this.countByMap(null, Collections.emptyMap());
   }
 
   @SelectProvider(type = MybatisCommand.class, method = MybatisCommand.COUNT_BY_MAP)
-  long countByMap(final Map<String, Object> whereConditions);
+  long countByMap(ProviderContext context, final Map<String, Object> whereConditions);
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT)
   @Options(useGeneratedKeys = true, keyProperty = "id")
-  void insert(final T entity);
+  void insert(ProviderContext context, final T entity);
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT_BATCH)
   @Options(useGeneratedKeys = true, keyProperty = "id")
-  void insertBatch(final List<T> entities);
+  void insertBatch(ProviderContext context, final List<T> entities);
 
   default void updateById(final T entity, final Long id) {
-    this.updateMapByMap(MybatisCommand.toMap(entity), Collections.singletonMap("id", id));
+    this.updateMapByMap(null, MybatisCommand.toMap(entity), Collections.singletonMap("id", id));
   }
 
   default void updateByMap(final T entity, final Map<String, Object> whereConditions) {
     this.updateMapByMap(
+        null,
         MybatisCommand.toMap(entity),
         whereConditions == null ? Collections.emptyMap() : whereConditions);
   }
 
   @UpdateProvider(type = MybatisCommand.class, method = MybatisCommand.UPDATE_MAP_BY_MAP)
   void updateMapByMap(
-      final Map<String, Object> updateMap, final Map<String, Object> whereConditions);
+      ProviderContext context,
+      final Map<String, Object> updateMap,
+      final Map<String, Object> whereConditions);
 
   default void updateMapById(final Map<String, Object> updateMap, final Long id) {
-    this.updateMapByMap(updateMap, Collections.singletonMap("id", id));
+    this.updateMapByMap(null, updateMap, Collections.singletonMap("id", id));
   }
 
   @DeleteProvider(type = MybatisCommand.class, method = MybatisCommand.DELETE_BY_MAP)
-  void deleteByMap(final Map<String, Object> whereConditions);
+  void deleteByMap(ProviderContext context, final Map<String, Object> whereConditions);
 
   default void deleteById(final Long id) {
-    this.deleteByMap(Collections.singletonMap("id", id));
+    this.deleteByMap(null, Collections.singletonMap("id", id));
   }
 }
