@@ -90,7 +90,8 @@ public class MybatisClauseBuilder {
     if ((distinctColumns == null || distinctColumns.isEmpty())
         && (targetColumns == null || targetColumns.isEmpty())) {
       for (String field : entityHelper.getEntityFields(entityClass)) {
-        sql.SELECT(stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, field)));
+        String colName = entityHelper.getColumnName(entityClass, field);
+        sql.SELECT(stringHelper.wrapIdentifier(colName));
       }
       return;
     }

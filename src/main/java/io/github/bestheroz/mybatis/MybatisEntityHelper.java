@@ -1,18 +1,20 @@
 package io.github.bestheroz.mybatis;
 
+import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/** 엔티티(VO/DTO) 클래스에서 오직 @Column 어노테이션이 붙은 필드만 추출합니다. */
 public class MybatisEntityHelper {
+  private static final Logger log = LoggerFactory.getLogger(MybatisEntityHelper.class);
   private final MybatisStringHelper stringHelper;
 
   public MybatisEntityHelper(MybatisStringHelper stringHelper) {
@@ -20,8 +22,8 @@ public class MybatisEntityHelper {
   }
 
   /**
-   * 특정 클래스에 매핑된 Table name을 리턴. jakarta.persistence.Table 또는 javax.persistence.Table 어노테이션이 존재할 경우
-   * name() 속성을 사용하고, 둘 다 없으면 CamelCase → snake_case 로 변환.
+   * 특정 클래스에 매핑된 테이블 이름을 반환. - 엔티티 클래스에 @Table(name="...")이 붙어 있으면 그 값을 사용 - 없으면 클래스 이름을
+   * CamelCase→snake_case 로 변환
    */
   protected String getTableName(final Class<?> entityClass) {
     if (MybatisCommand.TABLE_NAME_CACHE.containsKey(entityClass)) {
@@ -30,29 +32,25 @@ public class MybatisEntityHelper {
 
     String tableName = null;
 
-    // (1) 클래스에 붙은 모든 어노테이션을 순회하며 @Table 찾기
+    // @Table 어노테이션이 붙어 있다면 name() 값을 읽어옴
     for (Annotation ann : entityClass.getAnnotations()) {
       String annType = ann.annotationType().getName();
       if (annType.equals("jakarta.persistence.Table")
           || annType.equals("javax.persistence.Table")) {
         try {
-          // name() 메서드가 있으면 호출해서 값 가져오기
           Method nameMethod = ann.annotationType().getMethod("name");
           Object value = nameMethod.invoke(ann);
-          if (value instanceof String) {
-            String nameValue = (String) value;
-            if (!nameValue.isEmpty()) {
-              tableName = nameValue;
-              break;
-            }
+          if (value instanceof String && !((String) value).isEmpty()) {
+            tableName = (String) value;
+            break;
           }
-        } catch (Exception e) {
-          // reflection 호출 중 예외 발생 시 무시하고 다음 어노테이션 검사
+        } catch (Exception ignore) {
+          // 없거나 예외 발생 시 무시
         }
       }
     }
 
-    // (2) @Table이 없거나 name()이 비어 있으면 CamelCase → snake_case 변환
+    // @Table이 없거나 name()이 비어 있으면 CamelCase→snake_case
     if (tableName == null) {
       tableName = stringHelper.getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
     }
@@ -61,7 +59,7 @@ public class MybatisEntityHelper {
     return tableName;
   }
 
-  /** 엔티티 클래스의 모든 (@Column이 붙은) 필드 이름 집합 */
+  /** 엔티티 클래스에 붙은 모든 @Column 어노테이션 필드명(자바 필드 이름) 집합을 반환. */
   protected Set<String> getEntityFields(final Class<?> entityClass) {
     return Stream.of(getAllNonExcludedFields(entityClass))
         .map(Field::getName)
@@ -69,8 +67,9 @@ public class MybatisEntityHelper {
   }
 
   /**
-   * 모든 필드를 순회하여, @Column 어노테이션이 붙은 필드만 필터링. jakarta.persistence.Column 또는 javax.persistence.Column이
-   * 클래스패스에 없더라도 안전하게 동작.
+   * 클래스 계층을 순회하며 “실제 필드 레벨”에 @Column 어노테이션이 붙은 것만 필터링해서 리턴.
+   *
+   * <p>- jakarta.persistence.Column 또는 javax.persistence.Column 둘 다 처리 - 없으면 빈 배열 반환
    */
   protected static Field[] getAllNonExcludedFields(final Class<?> clazz) {
     if (MybatisCommand.FIELD_CACHE.containsKey(clazz)) {
@@ -88,7 +87,7 @@ public class MybatisEntityHelper {
         allFields.stream()
             .filter(
                 field -> {
-                  // (1) 해당 필드에 붙은 모든 어노테이션을 확인
+                  // (1) 필드 레벨 @Column이 붙어 있는지 확인
                   for (Annotation ann : field.getAnnotations()) {
                     String annType = ann.annotationType().getName();
                     if (annType.equals("jakarta.persistence.Column")
@@ -106,14 +105,13 @@ public class MybatisEntityHelper {
   }
 
   /**
-   * 특정 엔티티 클래스 + 자바 필드명을 받아서 DB 컬럼명으로 변환. @Column(name="...")을 우선으로, 없으면 CamelCase → snake_case 로
-   * 변환.
+   * 특정 엔티티 클래스와 자바 필드 이름을 받아 DB 컬럼명으로 변환. - 우선순위: @Column(name="...")이 붙어 있으면 name() → - 없으면
+   * CamelCase→snake_case 로 변환
    */
   protected String getColumnName(final Class<?> entityClass, final String fieldName) {
     try {
       Field field = findFieldInClassHierarchy(entityClass, fieldName);
       if (field != null) {
-        // (1) 해당 필드에 붙은 모든 어노테이션을 순회하며 @Column 찾기
         for (Annotation ann : field.getAnnotations()) {
           String annType = ann.annotationType().getName();
           if (annType.equals("jakarta.persistence.Column")
@@ -130,18 +128,19 @@ public class MybatisEntityHelper {
             } catch (Exception e) {
               // reflection 호출 중 예외 발생 시 무시하고 다음 어노테이션 검사
             }
+          } else {
+            return stringHelper.getCamelCaseToSnakeCase(fieldName);
           }
         }
       }
     } catch (Exception ignore) {
-      // 필드 탐색/리플렉션 중 예외가 발생해도 무시하고 CamelCase → snake_case 로 fallback
+      // 필드 또는 리플렉션 중 오류 난 경우 무시
     }
-
-    // (2) @Column이 없거나 name()이 비어 있으면 CamelCase → snake_case
-    return stringHelper.getCamelCaseToSnakeCase(fieldName);
+    log.error("entity 에 포함되지 않는 필드 발견 : {}", fieldName);
+    throw new MybatisRepositoryException("entity 에 포함되지 않는 필드 발견 : " + fieldName);
   }
 
-  /** 클래스 계층 구조를 타고 올라가면서 동일한 이름의 필드를 찾음 */
+  /** 클래스 계층을 타고 올라가며 동일한 이름의 필드를 찾음 */
   private Field findFieldInClassHierarchy(Class<?> clazz, String fieldName) {
     Class<?> curr = clazz;
     while (curr != null && curr != Object.class) {
@@ -154,12 +153,12 @@ public class MybatisEntityHelper {
     return null;
   }
 
-  // ===========================================
-  // Utility: Mapper 인터페이스 → 엔티티 클래스 추출
-  // ===========================================
+  /**
+   * mapper 인터페이스에서 제네릭 타입으로 선언한 엔티티 클래스를 추출. 예: public interface MyRepo extends
+   * MybatisRepository<User> { ... }
+   */
   @SuppressWarnings("unchecked")
   public <E> Class<E> extractEntityClassFromMapper(Class<?> mapperInterface) {
-    // (1) mapperInterface가 implements한 Generic Interfaces 확인
     Type[] genericIfs = mapperInterface.getGenericInterfaces();
     for (Type t : genericIfs) {
       if (t instanceof ParameterizedType) {
@@ -172,7 +171,7 @@ public class MybatisEntityHelper {
         }
       }
     }
-    // (2) 부모 인터페이스 재귀 탐색
+    // 부모 인터페이스 재귀 탐색
     for (Class<?> parentIf : mapperInterface.getInterfaces()) {
       Class<E> found = extractEntityClassFromMapper(parentIf);
       if (found != null) {
