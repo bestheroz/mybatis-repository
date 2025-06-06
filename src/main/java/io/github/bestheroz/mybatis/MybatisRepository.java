@@ -368,6 +368,7 @@ public interface MybatisRepository<T> {
   }
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT)
+  @Options(useGeneratedKeys = true, keyProperty = "id")
   void buildInsertSQL(ProviderContext context, final T entity);
 
   default void insert(final T entity) {
@@ -375,6 +376,7 @@ public interface MybatisRepository<T> {
   }
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT_BATCH)
+  @Options(useGeneratedKeys = true, keyProperty = "id")
   void buildInsertBatchSQL(ProviderContext context, final List<T> entities);
 
   default void insertBatch(final List<T> entities) {
