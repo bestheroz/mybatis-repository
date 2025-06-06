@@ -43,7 +43,9 @@ public class MybatisClauseBuilder {
       return;
     }
 
-    for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
+    Map<String, Object> extractedWhereConditions = extractWhereConditions(whereConditions);
+
+    for (Map.Entry<String, Object> entry : extractedWhereConditions.entrySet()) {
       final String key = entry.getKey();
       final Object value = entry.getValue();
 
@@ -60,6 +62,14 @@ public class MybatisClauseBuilder {
       // Condition 선택 후 빌드
       sql.WHERE(Condition.from(conditionType).buildClause(dbColumnName, value, this));
     }
+  }
+
+  private Map<String, Object> extractWhereConditions(Map<String, Object> params) {
+    Object whereConditions = params.get("whereConditions");
+    if (whereConditions instanceof Map) {
+      return (Map<String, Object>) whereConditions;
+    }
+    return Collections.emptyMap();
   }
 
   /**
