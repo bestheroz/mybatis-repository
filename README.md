@@ -87,9 +87,8 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public ListResult<UserDto.Response> getUserList(UserDto.Request request) {
-        long count = userRepository.countByMap(Map.of("removedFlag", false));
-        List<UserDto.Response> userDtoResponseList =
-            userRepository.getItemsByMapOrderByLimitOffset(
+        long count = this.userRepository.countByMap(Map.of("removedFlag", false));
+        List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(
                 Map.of("removedFlag", false),
                 List.of("-id"),
                 request.getPageSize(),
@@ -99,7 +98,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserDto.Response getUser(Long id) {
-        return userRepository.getItemById(id)
+        return this.userRepository.getItemById(id)
             .map(UserDto.Response::of)
             .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
     }
@@ -141,8 +140,7 @@ public class UserService {
     }
 
     public void deleteUser(final Long id, Operator operator) {
-        User user =
-                this.userRepository
+        User user = this.userRepository
                         .getItemById(id)
                         .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
         if (user.getRemovedFlag()) throw new RequestException400(ExceptionCode.UNKNOWN_USER);
@@ -588,7 +586,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserDto.Response getUser(Long id) {
-        return userRepository.getItemById(id)
+        return this.userRepository.getItemById(id)
             .map(UserDto.Response::of)
             .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
     }
