@@ -32,7 +32,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.4.0'
+    implementation 'io.github.bestheroz:mybatis-repository:0.6.1'
 }
 ```
 
@@ -42,26 +42,9 @@ dependencies {
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.4.0</version>
+    <version>0.6.1</version>
 </dependency>
 ```
-
-## 구성 방법
-
-### `application.yml`
-
-SQL 작업에서 특정 필드를 제외하도록 리포지토리를 구성합니다:
-
-```yaml
-mybatis-repository:
-  exclude-fields:
-    - updatedByAdmin
-    - updatedByUser
-    - createdByAdmin
-    - createdByUser
-    - Companion(with kotlin)
-```
-
 ## 사용 방법
 
 ### 리포지토리 정의
@@ -539,11 +522,15 @@ import lombok.Data;
 @Data
 @Table(name = "users")
 public class User {
+    @Column  // @Column 어노테이션이 있어야지 DB 컬럼으로 인식
     private Long id;
+    @Column
     private String loginId;
+    @Column
     private String password;
     @Column(name = "username")  // 이 경우 DB 컬럼은 username
     private String name;
+    @Column
     private Boolean useFlag;
     @Column(name = "is_removed")  // 이 경우 DB 컬럼은 is_removed
     private Boolean removedFlag;
