@@ -23,7 +23,6 @@
 - **Java**: 1.8 이상
 - **Spring Boot**: 2.x 이상
 - **MyBatis Spring Boot Starter**: 2.x 이상
-- **Jakarta Persistence API**: 2.x 이상
 - (추가지원) **Kotlin**: 1.x 이상
 
 ## 설치 방법
