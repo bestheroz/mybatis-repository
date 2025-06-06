@@ -118,12 +118,13 @@ public class MybatisCommand {
   // ===========================================
   public <T> String insert(final T entity) {
     SQL sql = new SQL();
-    sql.INSERT_INTO(entityHelper.getTableName(entity.getClass()));
+    Class<?> entityClass = entity.getClass();
+    sql.INSERT_INTO(entityHelper.getTableName(entityClass));
 
     Map<String, Object> entityMap = toMap(entity);
     for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
       sql.VALUES(
-          stringHelper.wrapIdentifier(entityHelper.getColumnName(entry.getKey())),
+          stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, entry.getKey())),
           clauseBuilder.formatValueForSQL(entry.getValue()));
     }
 
