@@ -32,7 +32,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.3.4'
+    implementation 'io.github.bestheroz:mybatis-repository:0.4.0'
 }
 ```
 
@@ -42,7 +42,7 @@ dependencies {
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.3.4</version>
+    <version>0.4.0</version>
 </dependency>
 ```
 
@@ -163,39 +163,39 @@ public class UserService {
 #### 1. 기본 조회 메서드
 
 ```java
-// getItems()
-getItems();
+// List<User> users = this.userRepository.getItems()
+List<User> users = this.userRepository.getItems();
 // SQL: SELECT * FROM users;
 
-// getItemsLimitOffset(limit, offset)
-getItemsLimitOffset(10, 0);
+// List<User> users = this.userRepository.getItemsLimitOffset(limit, offset)
+List<User> users = this.userRepository.getItemsLimitOffset(10, 0);
 // SQL: SELECT * FROM users LIMIT 10 OFFSET 0;
 
-// getItemsOrderBy(List<String>)
-getItemsOrderBy(List.of("name", "-id"));
+// List<User> users = this.userRepository.getItemsOrderBy(List<String>)
+List<User> users = this.userRepository.getItemsOrderBy(List.of("name", "-id"));
 // SQL: SELECT * FROM users ORDER BY name ASC, id DESC;
 
-// getItemsOrderByLimitOffset(List<String>, limit, offset)
-getItemsOrderByLimitOffset(List.of("name", "-createdAt"), 10, 0);
+// List<User> users = this.userRepository.getItemsOrderByLimitOffset(List<String>, limit, offset)
+List<User> users = this.userRepository.getItemsOrderByLimitOffset(List.of("name", "-createdAt"), 10, 0);
 // SQL: SELECT * FROM users ORDER BY name ASC, created_at DESC LIMIT 10 OFFSET 0;
 
-// getItemsByMap(Map)
-getItemsByMap(Map.of("removedFlag", false));
+// List<User> users = this.userRepository.getItemsByMap(Map)
+List<User> users = this.userRepository.getItemsByMap(Map.of("removedFlag", false));
 // SQL: SELECT * FROM users WHERE removed_flag = false;
 
-// getItemsByMapLimitOffset(Map, limit, offset)
-getItemsByMapLimitOffset(Map.of("useFlag", true), 10, 0);
+// List<User> users = this.userRepository.getItemsByMapLimitOffset(Map, limit, offset)
+List<User> users = this.userRepository.getItemsByMapLimitOffset(Map.of("useFlag", true), 10, 0);
 // SQL: SELECT * FROM users WHERE use_flag = true LIMIT 10 OFFSET 0;
 
-// getItemsByMapOrderBy(Map, List<String>)
-getItemsByMapOrderBy(
+// List<User> users = this.userRepository.getItemsByMapOrderBy(Map, List<String>)
+List<User> users = this.userRepository.getItemsByMapOrderBy(
     Map.of("removedFlag", false), 
     List.of("name", "-id")
 );
 // SQL: SELECT * FROM users WHERE removed_flag = false ORDER BY name ASC, id DESC;
 
-// getItemsByMapOrderByLimitOffset(Map, List<String>, limit, offset)
-getItemsByMapOrderByLimitOffset(
+// List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(Map, List<String>, limit, offset)
+List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(
     Map.of("useFlag", true), 
     List.of("name", "-id"),
     10, 
@@ -207,23 +207,23 @@ getItemsByMapOrderByLimitOffset(
 #### 2. DISTINCT 메서드
 
 ```java
-// getDistinctItems(Set<String>)
-getDistinctItems(Set.of("name", "loginId"));
+// List<User> users = this.userRepository.getDistinctItems(Set<String>)
+List<User> users = this.userRepository.getDistinctItems(Set.of("name", "loginId"));
 // SQL: SELECT DISTINCT name, login_id FROM users;
 
-// getDistinctItemsLimitOffset(Set<String>, limit, offset)
-getDistinctItemsLimitOffset(Set.of("name"), 10, 0);
+// List<User> users = this.userRepository.getDistinctItemsLimitOffset(Set<String>, limit, offset)
+List<User> users = this.userRepository.getDistinctItemsLimitOffset(Set.of("name"), 10, 0);
 // SQL: SELECT DISTINCT name FROM users LIMIT 10 OFFSET 0;
 
-// getDistinctItemsOrderBy(Set<String>, List<String>)
-getDistinctItemsOrderBy(
+// List<User> users = this.userRepository.getDistinctItemsOrderBy(Set<String>, List<String>)
+List<User> users = this.userRepository.getDistinctItemsOrderBy(
     Set.of("name", "loginId"),
     List.of("name", "-loginId")
 );
 // SQL: SELECT DISTINCT name, login_id FROM users ORDER BY name ASC, login_id DESC;
 
-// getDistinctItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
-getDistinctItemsOrderByLimitOffset(
+// List<User> users = this.userRepository.getDistinctItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
+List<User> users = this.userRepository.getDistinctItemsOrderByLimitOffset(
     Set.of("name", "loginId"),
     List.of("name", "-loginId"),
     10,
@@ -231,15 +231,15 @@ getDistinctItemsOrderByLimitOffset(
 );
 // SQL: SELECT DISTINCT name, login_id FROM users ORDER BY name ASC, login_id DESC LIMIT 10 OFFSET 0;
 
-// getDistinctItemsByMap(Set<String>, Map)
-getDistinctItemsByMap(
+// List<User> users = this.userRepository.getDistinctItemsByMap(Set<String>, Map)
+List<User> users = this.userRepository.getDistinctItemsByMap(
     Set.of("name", "loginId"),
     Map.of("removedFlag", false)
 );
 // SQL: SELECT DISTINCT name, login_id FROM users WHERE removed_flag = false;
 
-// getDistinctItemsByMapLimitOffset(Set<String>, Map, limit, offset)
-getDistinctItemsByMapLimitOffset(
+// List<User> users = this.userRepository.getDistinctItemsByMapLimitOffset(Set<String>, Map, limit, offset)
+List<User> users = this.userRepository.getDistinctItemsByMapLimitOffset(
     Set.of("name"),
     Map.of("removedFlag", false),
     10,
@@ -247,16 +247,16 @@ getDistinctItemsByMapLimitOffset(
 );
 // SQL: SELECT DISTINCT name FROM users WHERE removed_flag = false LIMIT 10 OFFSET 0;
 
-// getDistinctItemsByMapOrderBy(Set<String>, Map, List<String>)
-getDistinctItemsByMapOrderBy(
+// List<User> users = this.userRepository.getDistinctItemsByMapOrderBy(Set<String>, Map, List<String>)
+List<User> users = this.userRepository.getDistinctItemsByMapOrderBy(
     Set.of("name", "loginId"),
     Map.of("useFlag", true),
     List.of("name", "-loginId")
 );
 // SQL: SELECT DISTINCT name, login_id FROM users WHERE use_flag = true ORDER BY name ASC, login_id DESC;
 
-// getDistinctItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
-getDistinctItemsByMapOrderByLimitOffset(
+// List<User> users = this.userRepository.getDistinctItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
+List<User> users = this.userRepository.getDistinctItemsByMapOrderByLimitOffset(
     Set.of("name", "loginId"),
     Map.of("useFlag", true),
     List.of("name", "-loginId"),
@@ -269,23 +269,23 @@ getDistinctItemsByMapOrderByLimitOffset(
 #### 3. Target 컬럼 메서드
 
 ```java
-// getTargetItems(Set<String>)
-getTargetItems(Set.of("id", "name"));
+// List<User> users = this.userRepository.getTargetItems(Set<String>)
+List<User> users = this.userRepository.getTargetItems(Set.of("id", "name"));
 // SQL: SELECT id, name FROM users;
 
-// getTargetItemsLimitOffset(Set<String>, limit, offset)
-getTargetItemsLimitOffset(Set.of("id", "name"), 10, 0);
+// List<User> users = this.userRepository.getTargetItemsLimitOffset(Set<String>, limit, offset)
+List<User> users = this.userRepository.getTargetItemsLimitOffset(Set.of("id", "name"), 10, 0);
 // SQL: SELECT id, name FROM users LIMIT 10 OFFSET 0;
 
-// getTargetItemsOrderBy(Set<String>, List<String>)
-getTargetItemsOrderBy(
+// List<User> users = this.userRepository.getTargetItemsOrderBy(Set<String>, List<String>)
+List<User> users = this.userRepository.getTargetItemsOrderBy(
     Set.of("id", "name"),
     List.of("name", "-id")
 );
 // SQL: SELECT id, name FROM users ORDER BY name ASC, id DESC;
 
-// getTargetItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
-getTargetItemsOrderByLimitOffset(
+// List<User> users = this.userRepository.getTargetItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
+List<User> users = this.userRepository.getTargetItemsOrderByLimitOffset(
     Set.of("id", "name"),
     List.of("name", "-id"),
     10,
@@ -293,15 +293,15 @@ getTargetItemsOrderByLimitOffset(
 );
 // SQL: SELECT id, name FROM users ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
 
-// getTargetItemsByMap(Set<String>, Map)
-getTargetItemsByMap(
+// List<User> users = this.userRepository.getTargetItemsByMap(Set<String>, Map)
+List<User> users = this.userRepository.getTargetItemsByMap(
     Set.of("id", "name"),
     Map.of("removedFlag", false)
 );
 // SQL: SELECT id, name FROM users WHERE removed_flag = false;
 
-// getTargetItemsByMapLimitOffset(Set<String>, Map, limit, offset)
-getTargetItemsByMapLimitOffset(
+// List<User> users = this.userRepository.getTargetItemsByMapLimitOffset(Set<String>, Map, limit, offset)
+List<User> users = this.userRepository.getTargetItemsByMapLimitOffset(
     Set.of("id", "name"),
     Map.of("removedFlag", false),
     10,
@@ -309,16 +309,16 @@ getTargetItemsByMapLimitOffset(
 );
 // SQL: SELECT id, name FROM users WHERE removed_flag = false LIMIT 10 OFFSET 0;
 
-// getTargetItemsByMapOrderBy(Set<String>, Map, List<String>)
-getTargetItemsByMapOrderBy(
+// List<User> users = this.userRepository.getTargetItemsByMapOrderBy(Set<String>, Map, List<String>)
+List<User> users = this.userRepository.getTargetItemsByMapOrderBy(
     Set.of("id", "name"),
     Map.of("useFlag", true),
     List.of("name", "-id")
 );
 // SQL: SELECT id, name FROM users WHERE use_flag = true ORDER BY name ASC, id DESC;
 
-// getTargetItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
-getTargetItemsByMapOrderByLimitOffset(
+// List<User> users = this.userRepository.getTargetItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
+List<User> users = this.userRepository.getTargetItemsByMapOrderByLimitOffset(
     Set.of("id", "name"),
     Map.of("useFlag", true),
     List.of("name", "-id"),
@@ -331,34 +331,34 @@ getTargetItemsByMapOrderByLimitOffset(
 #### 4. 단일 아이템 조회
 
 ```java
-// getItemByMap(Map)
-getItemByMap(Map.of(
+// Optional<User> user = this.userRepository.getItemByMap(Map)
+Optional<User> user = this.userRepository.getItemByMap(Map.of(
     "loginId", "developer",
     "removedFlag", false
 ));
 // SQL: SELECT * FROM users WHERE login_id = 'developer' AND removed_flag = false;
 
-// getItemById(Long)
-getItemById(1L);
+// Optional<User> user = this.userRepository.getItemById(Long)
+Optional<User> user = this.userRepository.getItemById(1L);
 // SQL: SELECT * FROM users WHERE id = 1;
 ```
 
 #### 5. 카운트 메서드
 
 ```java
-// countAll()
-countAll();
+// long count = this.userRepository.countAll()
+long count = this.userRepository.countAll();
 // SQL: SELECT COUNT(*) FROM users;
 
-// countByMap(Map)
-countByMap(Map.of("removedFlag", false));
+// long count = this.userRepository.countByMap(Map)
+long count = this.userRepository.countByMap(Map.of("removedFlag", false));
 // SQL: SELECT COUNT(*) FROM users WHERE removed_flag = false;
 ```
 
 #### 6. 삽입 메서드
 
 ```java
-// insert(T)
+// this.userRepository.insert(T)
 User user = User.of(
     "developer",
     "password123",
@@ -367,38 +367,38 @@ User user = User.of(
     List.of(AuthorityEnum.NOTICE_VIEW),
     operator
 );
-insert(user);
+this.userRepository.insert(user);
 // SQL: INSERT INTO users (...) VALUES (...);
 
-// insertBatch(List<T>)
+// this.userRepository.insertBatch(List<T>)
 List<User> users = List.of(user1, user2, user3);
-insertBatch(users);
+this.userRepository.insertBatch(users);
 // SQL: INSERT INTO users (...) VALUES (...), (...), (...);
 ```
 
 #### 7. 업데이트 메서드
 
 ```java
-// updateById(T, Long)
-updateById(user, 1L);
+// this.userRepository.updateById(T, Long)
+this.userRepository.updateById(user, 1L);
 // SQL: UPDATE users SET ... WHERE id = 1;
 
-// updateByMap(T, Map)
-updateByMap(
+// this.userRepository.updateByMap(T, Map)
+this.userRepository.updateByMap(
     user,
     Map.of("loginId", "developer")
 );
 // SQL: UPDATE users SET ... WHERE login_id = 'developer';
 
-// updateMapByMap(Map, Map)
-updateMapByMap(
+// this.userRepository.updateMapByMap(Map, Map)
+        this.userRepository.updateMapByMap(
     Map.of("useFlag", false),
     Map.of("removedFlag", true)
 );
 // SQL: UPDATE users SET use_flag = false WHERE removed_flag = true;
 
-// updateMapById(Map, Long)
-updateMapById(
+// this.userRepository.updateMapById(Map, Long)
+this.userRepository.updateMapById(
     Map.of("useFlag", false),
     1L
 );
@@ -408,12 +408,12 @@ updateMapById(
 #### 8. 삭제 메서드
 
 ```java
-// deleteByMap(Map)
-deleteByMap(Map.of("removedFlag", true));
+// this.userRepository.deleteByMap(Map)
+this.userRepository.deleteByMap(Map.of("removedFlag", true));
 // SQL: DELETE FROM users WHERE removed_flag = true;
 
-// deleteById(Long)
-deleteById(1L);
+// this.userRepository.deleteById(Long)
+this.userRepository.deleteById(1L);
 // SQL: DELETE FROM users WHERE id = 1;
 ```
 
@@ -426,12 +426,12 @@ deleteById(1L);
   ```java
   // 동등 조건
   Map<String, Object> conditions = Map.of("name", "John");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE name = 'John';
 
   // 부등 조건
   Map<String, Object> conditions = Map.of("name:not", "John");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE name <> 'John';
   ```
 
@@ -440,12 +440,12 @@ deleteById(1L);
   ```java
   // IN 조건
   Map<String, Object> conditions = Map.of("id:in", Set.of(1L, 2L, 3L));
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE id IN (1, 2, 3);
 
   // NOT IN 조건
   Map<String, Object> conditions = Map.of("id:notIn", Set.of(1L, 2L, 3L));
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE id NOT IN (1, 2, 3);
   ```
 
@@ -454,12 +454,12 @@ deleteById(1L);
   ```java
   // IS NULL 조건
   Map<String, Object> conditions = Map.of("deletedAt:null", null);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE deleted_at IS NULL;
 
   // IS NOT NULL 조건
   Map<String, Object> conditions = Map.of("deletedAt:notNull", null);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE deleted_at IS NOT NULL;
   ```
 
@@ -468,22 +468,22 @@ deleteById(1L);
   ```java
   // 포함 (substring)
   Map<String, Object> conditions = Map.of("description:contains", "admin");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') > 0;
 
   // 포함하지 않음 (substring)
   Map<String, Object> conditions = Map.of("description:notContains", "admin");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') = 0;
 
   // 시작 (startsWith)
   Map<String, Object> conditions = Map.of("username:startsWith", "john");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE INSTR(`username`, 'john') = 1;
 
   // 끝 (endsWith)
   Map<String, Object> conditions = Map.of("username:endsWith", "doe");
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE RIGHT(`username`, CHAR_LENGTH('doe')) = 'doe';
   ```
 
@@ -492,22 +492,22 @@ deleteById(1L);
   ```java
   // 미만 (Less Than)
   Map<String, Object> conditions = Map.of("age:lt", 30);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE age < 30;
 
   // 이하 (Less Than or Equal To)
   Map<String, Object> conditions = Map.of("age:lte", 30);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE age <= 30;
 
   // 초과 (Greater Than)
   Map<String, Object> conditions = Map.of("age:gt", 20);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE age > 20;
 
   // 이상 (Greater Than or Equal To)
   Map<String, Object> conditions = Map.of("age:gte", 20);
-  getItemsByMap(conditions);
+  this.userRepository.getItemsByMap(conditions);
   // SQL: SELECT * FROM users WHERE age >= 20;
   ```
 
@@ -518,7 +518,7 @@ deleteById(1L);
   ```java
   // 동등 조건 (기본)
   Map<String, Object> conditions = Map.of("email", "bestheroz@gmail.com");
-  getItemByMap(conditions);
+  this.userRepository.getItemByMap(conditions);
   // SQL: SELECT * FROM users WHERE email = 'bestheroz@gmail.com';
   ```
 
@@ -544,8 +544,10 @@ public class User {
     private Long id;
     private String loginId;
     private String password;
+    @Column(name = "username")  // 이 경우 DB 컬럼은 username
     private String name;
     private Boolean useFlag;
+    @Column(name = "is_removed")  // 이 경우 DB 컬럼은 is_removed
     private Boolean removedFlag;
     // 추가 필드 및 메서드...
 }
