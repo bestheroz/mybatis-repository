@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.NonNull;
 
 public class MybatisCommand {
   private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
@@ -18,7 +17,6 @@ public class MybatisCommand {
   // ======================
   protected static final Map<Class<?>, Field[]> FIELD_CACHE = new ConcurrentHashMap<>();
   protected static final Map<Class<?>, String> TABLE_NAME_CACHE = new ConcurrentHashMap<>();
-  protected static final Map<String, String> COLUMN_NAME_CACHE = new ConcurrentHashMap<>();
 
   // ======================
   // Allowed Method List
@@ -118,7 +116,7 @@ public class MybatisCommand {
   // ===========================================
   // INSERT
   // ===========================================
-  public <T> String insert(@NonNull final T entity) {
+  public <T> String insert(final T entity) {
     SQL sql = new SQL();
     sql.INSERT_INTO(entityHelper.getTableName(entity.getClass()));
 
@@ -133,7 +131,7 @@ public class MybatisCommand {
     return sql.toString();
   }
 
-  public <T> String insertBatch(@NonNull final List<T> entities) {
+  public <T> String insertBatch(final List<T> entities) {
     if (entities.isEmpty()) {
       log.warn("entities are empty");
       throw new MybatisRepositoryException("entities empty");

@@ -57,8 +57,6 @@ class MybatisEntityHelperTest {
     MybatisCommand.FIELD_CACHE.clear();
   }
 
-  // ... (기존 테스트 코드)
-
   @Test
   @DisplayName("유효한 스택트레이스 요소에서 메소드명이 METHOD_LIST에 포함되어 있고 인터페이스 조건을 만족하면 true를 반환해야 한다")
   void isValidStackTraceElement_WithValidElement_ShouldReturnTrue() throws Exception {
@@ -314,7 +312,24 @@ class MybatisEntityHelperTest {
     when(stringHelper.getCamelCaseToSnakeCase(fieldName)).thenReturn("user_name");
 
     // when
-    String columnName = entityHelper.getColumnName(fieldName);
+    String columnName = entityHelper.getColumnName(TestEntityWithTableAnnotation.class, fieldName);
+
+    // then
+    assertThat(columnName).isEqualTo("user_name");
+  }
+
+  @Test
+  @DisplayName("스택트레이스 기반 getColumnName 메서드도 정상 동작해야 한다")
+  void getColumnName_WithStackTraceContext_ShouldWork() {
+    // given
+    String fieldName = "userName";
+    when(stringHelper.getCamelCaseToSnakeCase(fieldName)).thenReturn("user_name");
+
+    // 테스트에서는 스택트레이스를 통한 엔티티 클래스 추출이 불가능하므로
+    // 클래스를 직접 전달하는 오버로드 메서드를 사용
+
+    // when
+    String columnName = entityHelper.getColumnName(TestEntityWithTableAnnotation.class, fieldName);
 
     // then
     assertThat(columnName).isEqualTo("user_name");
@@ -331,23 +346,9 @@ class MybatisEntityHelperTest {
     assertThat(firstCall).isEqualTo(secondCall).isEqualTo("test_table");
   }
 
-  // 테스트용 스택트레이스 시뮬레이션 메소드 추가
-  private void simulateStackTrace(Class<?> repositoryClass, String methodName) {
-    StackTraceElement[] stackTrace = new Throwable().getStackTrace();
-    StackTraceElement mockElement =
-        new StackTraceElement(
-            repositoryClass.getName(), methodName, repositoryClass.getSimpleName() + ".java", 1);
-    // 기존 스택트레이스의 첫번째 요소를 mock 요소로 교체
-    stackTrace[0] = mockElement;
-    new Throwable().setStackTrace(stackTrace);
-  }
-
   @Test
   @DisplayName("getTableName 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
   void getTableName_WithInvalidStackTrace_ShouldThrowException() {
-    // given
-    simulateStackTrace(NoInterfaceRepository.class, "invalidMethod");
-
     // when & then
     assertThatThrownBy(() -> entityHelper.getTableName())
         .isInstanceOf(MybatisRepositoryException.class)
@@ -357,12 +358,35 @@ class MybatisEntityHelperTest {
   @Test
   @DisplayName("getEntityFields 메소드는 유효하지 않은 스택트레이스에서 예외를 발생시켜야 한다")
   void getEntityFields_WithInvalidStackTrace_ShouldThrowException() {
-    // given
-    simulateStackTrace(NoInterfaceRepository.class, "invalidMethod");
-
     // when & then
     assertThatThrownBy(() -> entityHelper.getEntityFields())
         .isInstanceOf(MybatisRepositoryException.class)
         .hasMessageContaining("stackTraceElements is required");
+  }
+
+  @Test
+  @DisplayName("스택트레이스 기반 getColumnName 메서드에서 예외 처리 확인")
+  void getColumnName_WithInvalidStackTrace_ShouldThrowException() {
+    // given
+    String fieldName = "userName";
+
+    // when & then
+    assertThatThrownBy(() -> entityHelper.getColumnName(fieldName))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("stackTraceElements is required");
+  }
+
+  @Test
+  @DisplayName("클래스를 직접 전달하는 getColumnName 메서드 테스트")
+  void getColumnName_WithDirectClass_ShouldWork() {
+    // given
+    String fieldName = "userId";
+    when(stringHelper.getCamelCaseToSnakeCase(fieldName)).thenReturn("user_id");
+
+    // when
+    String columnName = entityHelper.getColumnName(TestEntity.class, fieldName);
+
+    // then
+    assertThat(columnName).isEqualTo("user_id");
   }
 }

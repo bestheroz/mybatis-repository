@@ -3,6 +3,7 @@ package io.github.bestheroz.mybatis;
 import static io.github.bestheroz.mybatis.MybatisCommand.*;
 
 import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
+import jakarta.persistence.Column;
 import jakarta.persistence.Table;
 import java.lang.reflect.Field;
 import java.util.*;
@@ -108,7 +109,39 @@ public class MybatisEntityHelper {
   }
 
   protected String getColumnName(String fieldName) {
-    // 'userName' -> 'user_name'
-    return COLUMN_NAME_CACHE.computeIfAbsent(fieldName, stringHelper::getCamelCaseToSnakeCase);
+    return getColumnName(getEntityClass(), fieldName);
+  }
+
+  protected String getColumnName(Class<?> entityClass, String fieldName) {
+    return getColumnNameFromField(entityClass, fieldName);
+  }
+
+  private String getColumnNameFromField(Class<?> entityClass, String fieldName) {
+    try {
+      Field field = findFieldInClassHierarchy(entityClass, fieldName);
+      if (field != null) {
+        Column columnAnnotation = field.getAnnotation(Column.class);
+        if (columnAnnotation != null && !columnAnnotation.name().isEmpty()) {
+          return columnAnnotation.name();
+        }
+      }
+    } catch (Exception e) {
+      // ignore
+    }
+
+    // @Column 어노테이션이 없거나 name이 비어있으면 기본 변환 규칙 적용
+    return stringHelper.getCamelCaseToSnakeCase(fieldName);
+  }
+
+  private Field findFieldInClassHierarchy(Class<?> clazz, String fieldName) {
+    Class<?> currentClass = clazz;
+    while (currentClass != null && currentClass != Object.class) {
+      try {
+        return currentClass.getDeclaredField(fieldName);
+      } catch (NoSuchFieldException e) {
+        currentClass = currentClass.getSuperclass();
+      }
+    }
+    return null;
   }
 }
