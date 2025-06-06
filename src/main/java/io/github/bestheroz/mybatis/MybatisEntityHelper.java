@@ -21,13 +21,50 @@ public class MybatisEntityHelper {
     this.stringHelper = stringHelper;
   }
 
-  /** 현재 stacktrace 에서 유효한 element 를 찾아, 제네릭으로 선언된 클래스 타입을 파싱해 반환. */
   private Class<?> getEntityClass() {
-    return Arrays.stream(new Throwable().getStackTrace())
-        .filter(this::isValidStackTraceElement)
-        .findFirst()
-        .map(this::getClassFromStackTraceElement)
-        .orElseThrow(() -> new MybatisRepositoryException("stackTraceElements is required"));
+    try {
+      // 1) Throwable.getStackTrace() 결과가 null이거나 비어 있으면 예외
+      StackTraceElement[] stackTraceElements = new Throwable().getStackTrace();
+      if (stackTraceElements == null || stackTraceElements.length == 0) {
+        throw new MybatisRepositoryException("stackTraceElements is required");
+      }
+
+      // 2) null 검사, isValidStackTraceElement 판별, getClassFromStackTraceElement 호출
+      return Arrays.stream(stackTraceElements)
+          // StackTraceElement가 null일 수 있으므로 필터링
+          .filter(Objects::nonNull)
+          // 유효한 스택 프레임인지 확인
+          .filter(this::isValidStackTraceElement)
+          // 첫 번째 유효한 요소가 있으면 클래스 추출
+          .findFirst()
+          .map(
+              element -> {
+                try {
+                  Class<?> clazz = getClassFromStackTraceElement(element);
+                  // getClassFromStackTraceElement이 null을 리턴할 수도 있으므로 검사
+                  if (clazz == null) {
+                    throw new MybatisRepositoryException(
+                        "Derived class from StackTraceElement is null: " + element);
+                  }
+                  return clazz;
+                } catch (MybatisRepositoryException e) {
+                  // 이미 MybatisRepositoryException인 경우 그대로 던짐
+                  throw e;
+                } catch (Exception e) {
+                  // Class.forName 등에서 발생할 수 있는 예외를 래핑
+                  throw new MybatisRepositoryException(
+                      "Failed to load class from stack trace element: " + element, e);
+                }
+              })
+          // 유효한 스택 프레임을 못 찾은 경우 예외
+          .orElseThrow(() -> new MybatisRepositoryException("No valid stack trace element found"));
+    } catch (MybatisRepositoryException e) {
+      // 이미 래핑된 예외는 그대로 던짐
+      throw e;
+    } catch (Exception e) {
+      // 그 외의 예기치 못한 예외도 모두 MybatisRepositoryException으로 래핑
+      throw new MybatisRepositoryException("Unexpected error in getEntityClass()", e);
+    }
   }
 
   private boolean isValidStackTraceElement(final StackTraceElement element) {
@@ -109,13 +146,10 @@ public class MybatisEntityHelper {
   }
 
   protected String getColumnName(String fieldName) {
-    log.debug("getColumnName.fieldName: {}", fieldName);
     return getColumnName(getEntityClass(), fieldName);
   }
 
   protected String getColumnName(Class<?> entityClass, String fieldName) {
-    log.debug("getColumnName.entityClass: {}", entityClass);
-    log.debug("getColumnName.fieldName: {}", fieldName);
     return getColumnNameFromField(entityClass, fieldName);
   }
 
@@ -125,7 +159,6 @@ public class MybatisEntityHelper {
       if (field != null) {
         Column columnAnnotation = field.getAnnotation(Column.class);
         if (columnAnnotation != null && !columnAnnotation.name().isEmpty()) {
-          log.debug("getColumnName.columnAnnotation.name: {}", columnAnnotation.name());
           return columnAnnotation.name();
         }
       }
@@ -141,11 +174,6 @@ public class MybatisEntityHelper {
     Class<?> currentClass = clazz;
     while (currentClass != null && currentClass != Object.class) {
       try {
-        log.debug("findFieldInClassHierarchy.currentClass: {}", currentClass);
-        log.debug("findFieldInClassHierarchy.fieldName: {}", fieldName);
-        log.debug(
-            "findFieldInClassHierarchy.currentClass.getDeclaredField(fieldName): {}",
-            currentClass.getDeclaredField(fieldName));
         return currentClass.getDeclaredField(fieldName);
       } catch (NoSuchFieldException e) {
         currentClass = currentClass.getSuperclass();
