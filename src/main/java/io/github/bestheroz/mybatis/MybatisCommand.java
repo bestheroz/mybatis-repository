@@ -229,7 +229,7 @@ public class MybatisCommand {
 
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
       String fieldName = entry.getKey();
-      if (!MybatisProperties.getExcludeFields().contains(fieldName)) {
+      if (MybatisProperties.isProcessableColumn(fieldName)) {
         String columnName = entityHelper.getColumnName(entityClass, fieldName);
         sql.SET(clauseBuilder.buildEqualClause(columnName, entry.getValue()));
       }

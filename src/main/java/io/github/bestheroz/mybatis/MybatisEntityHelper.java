@@ -57,7 +57,7 @@ public class MybatisEntityHelper {
 
     Field[] filtered =
         allFields.stream()
-            .filter(field -> !MybatisProperties.getExcludeFields().contains(field.getName()))
+            .filter(field -> MybatisProperties.isProcessableColumn(field.getName()))
             .distinct()
             .toArray(Field[]::new);
     MybatisCommand.FIELD_CACHE.put(clazz, filtered);

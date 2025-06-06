@@ -19,4 +19,8 @@ public class MybatisProperties {
   public static Set<String> getExcludeFields() {
     return excludeFields;
   }
+
+  public static Boolean isProcessableColumn(String fieldName) {
+    return !excludeFields.contains(fieldName);
+  }
 }
