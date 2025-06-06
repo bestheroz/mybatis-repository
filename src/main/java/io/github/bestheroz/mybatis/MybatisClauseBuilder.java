@@ -69,7 +69,7 @@ public class MybatisClauseBuilder {
     if (whereConditions instanceof Map) {
       return (Map<String, Object>) whereConditions;
     }
-    return Collections.emptyMap();
+    return params;
   }
 
   /**
