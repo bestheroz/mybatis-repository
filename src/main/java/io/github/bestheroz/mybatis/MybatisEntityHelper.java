@@ -109,10 +109,13 @@ public class MybatisEntityHelper {
   }
 
   protected String getColumnName(String fieldName) {
+    log.debug("getColumnName.fieldName: {}", fieldName);
     return getColumnName(getEntityClass(), fieldName);
   }
 
   protected String getColumnName(Class<?> entityClass, String fieldName) {
+    log.debug("getColumnName.entityClass: {}", entityClass);
+    log.debug("getColumnName.fieldName: {}", fieldName);
     return getColumnNameFromField(entityClass, fieldName);
   }
 
@@ -122,6 +125,7 @@ public class MybatisEntityHelper {
       if (field != null) {
         Column columnAnnotation = field.getAnnotation(Column.class);
         if (columnAnnotation != null && !columnAnnotation.name().isEmpty()) {
+          log.debug("getColumnName.columnAnnotation.name: {}", columnAnnotation.name());
           return columnAnnotation.name();
         }
       }
@@ -137,6 +141,11 @@ public class MybatisEntityHelper {
     Class<?> currentClass = clazz;
     while (currentClass != null && currentClass != Object.class) {
       try {
+        log.debug("findFieldInClassHierarchy.currentClass: {}", currentClass);
+        log.debug("findFieldInClassHierarchy.fieldName: {}", fieldName);
+        log.debug(
+            "findFieldInClassHierarchy.currentClass.getDeclaredField(fieldName): {}",
+            currentClass.getDeclaredField(fieldName));
         return currentClass.getDeclaredField(fieldName);
       } catch (NoSuchFieldException e) {
         currentClass = currentClass.getSuperclass();
