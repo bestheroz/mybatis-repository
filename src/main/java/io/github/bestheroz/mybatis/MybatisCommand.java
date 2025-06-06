@@ -1,11 +1,7 @@
 package io.github.bestheroz.mybatis;
 
-import static io.github.bestheroz.mybatis.MybatisCommand.*;
-
 import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.lang.reflect.Field;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -68,16 +64,16 @@ public class MybatisCommand {
   // ===========================================
   // 1) COUNT
   // ===========================================
-  public static String buildCountSQL(ProviderContext context, Map<String, Object> whereConditions) {
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+  public String buildCountSQL(ProviderContext context, Map<String, Object> whereConditions) {
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for count: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(tableName);
-    staticClauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
     log.debug("count SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
   }
@@ -85,8 +81,7 @@ public class MybatisCommand {
   // ===========================================
   // 2) SELECT ONE (Optional<T>)
   // ===========================================
-  public static String buildSelectOneSQL(
-      ProviderContext context, Map<String, Object> whereConditions) {
+  public String buildSelectOneSQL(ProviderContext context, Map<String, Object> whereConditions) {
     if (whereConditions == null || whereConditions.isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for getItemByMap");
     }
@@ -103,7 +98,7 @@ public class MybatisCommand {
   // ===========================================
   // 3) SELECT LIST
   // ===========================================
-  public static String buildSelectSQL(
+  public String buildSelectSQL(
       ProviderContext context,
       Set<String> distinctColumns,
       Set<String> targetColumns,
@@ -111,23 +106,23 @@ public class MybatisCommand {
       List<String> orderByConditions,
       Integer limit,
       Integer offset) {
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for select: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL();
     // SELECT 절
-    staticClauseBuilder.appendSelectColumns(sql, distinctColumns, targetColumns, entityClass);
+    clauseBuilder.appendSelectColumns(sql, distinctColumns, targetColumns, entityClass);
     sql.FROM(tableName);
 
     // WHERE 절
-    staticClauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
 
     // ORDER BY 절
-    staticClauseBuilder.appendOrderBy(sql, orderByConditions, entityClass);
+    clauseBuilder.appendOrderBy(sql, orderByConditions, entityClass);
 
     // LIMIT / OFFSET
     if (limit != null) {
@@ -144,25 +139,25 @@ public class MybatisCommand {
   // ===========================================
   // 4) INSERT ONE
   // ===========================================
-  public static <T> String buildInsertSQL(ProviderContext context, T entity) {
+  public <T> String buildInsertSQL(ProviderContext context, T entity) {
     if (entity == null) {
       throw new MybatisRepositoryException("entity is null for insert");
     }
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for insert: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().INSERT_INTO(tableName);
 
     Map<String, Object> entityMap = toMap(entity);
     for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
-      String columnName = entityHelperStatic.getColumnName(entityClass, entry.getKey());
+      String columnName = entityHelper.getColumnName(entityClass, entry.getKey());
       sql.VALUES(
-          stringHelperStatic.wrapIdentifier(columnName),
-          staticClauseBuilder.formatValueForSQL(entry.getValue()));
+          stringHelper.wrapIdentifier(columnName),
+          clauseBuilder.formatValueForSQL(entry.getValue()));
     }
 
     log.debug("insert SQL: {}", sql.toString().replaceAll("\n", " "));
@@ -172,26 +167,26 @@ public class MybatisCommand {
   // ===========================================
   // 5) INSERT BATCH
   // ===========================================
-  public static <T> String buildInsertBatchSQL(ProviderContext context, List<T> entities) {
+  public <T> String buildInsertBatchSQL(ProviderContext context, List<T> entities) {
     if (entities == null || entities.isEmpty()) {
       throw new MybatisRepositoryException("entities empty for insertBatch");
     }
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for insertBatch: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
-    Set<String> columns = entityHelperStatic.getEntityFields(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
+    Set<String> columns = entityHelper.getEntityFields(entityClass);
 
     // INSERT INTO table (col1, col2, …)
-    String wrappedTable = stringHelperStatic.wrapIdentifier(tableName);
+    String wrappedTable = stringHelper.wrapIdentifier(tableName);
     SQL sql = new SQL().INSERT_INTO(wrappedTable);
     String columnsJoined =
         columns.stream()
-            .map(v -> entityHelperStatic.getColumnName(entityClass, v))
-            .map(stringHelperStatic::wrapIdentifier)
+            .map(v -> entityHelper.getColumnName(entityClass, v))
+            .map(stringHelper::wrapIdentifier)
             .collect(Collectors.joining(", "));
     sql.INTO_COLUMNS(columnsJoined);
 
@@ -201,7 +196,7 @@ public class MybatisCommand {
       Map<String, Object> entityMap = toMap(entity);
       List<String> rowValues = new ArrayList<>();
       for (String fieldName : columns) {
-        rowValues.add(staticClauseBuilder.formatValueForSQL(entityMap.get(fieldName)));
+        rowValues.add(clauseBuilder.formatValueForSQL(entityMap.get(fieldName)));
       }
       valuesList.add(rowValues);
     }
@@ -218,29 +213,29 @@ public class MybatisCommand {
   // ===========================================
   // 6) UPDATE
   // ===========================================
-  public static String buildUpdateSQL(
+  public String buildUpdateSQL(
       ProviderContext context, Map<String, Object> updateMap, Map<String, Object> whereConditions) {
     if (whereConditions == null || whereConditions.isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for update");
     }
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for update: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().UPDATE(tableName);
 
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
       String fieldName = entry.getKey();
       if (!MybatisProperties.getExcludeFields().contains(fieldName)) {
-        String columnName = entityHelperStatic.getColumnName(entityClass, fieldName);
-        sql.SET(staticClauseBuilder.buildEqualClause(columnName, entry.getValue()));
+        String columnName = entityHelper.getColumnName(entityClass, fieldName);
+        sql.SET(clauseBuilder.buildEqualClause(columnName, entry.getValue()));
       }
     }
-    staticClauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    staticClauseBuilder.ensureWhereClause(sql);
+    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    clauseBuilder.ensureWhereClause(sql);
 
     log.debug("update SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
@@ -249,52 +244,23 @@ public class MybatisCommand {
   // ===========================================
   // 7) DELETE
   // ===========================================
-  public static String buildDeleteSQL(
-      ProviderContext context, Map<String, Object> whereConditions) {
+  public String buildDeleteSQL(ProviderContext context, Map<String, Object> whereConditions) {
     if (whereConditions == null || whereConditions.isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for delete");
     }
-    Class<?> entityClass = extractEntityClassFromMapper(context.getMapperType());
+    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(
           "cannot determine entity class for delete: " + context.getMapperType().getName());
     }
 
-    String tableName = entityHelperStatic.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().DELETE_FROM(tableName);
-    staticClauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    staticClauseBuilder.ensureWhereClause(sql);
+    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    clauseBuilder.ensureWhereClause(sql);
 
     log.debug("delete SQL: {}", sql.toString().replaceAll("\n", " "));
     return sql.toString();
-  }
-
-  // ===========================================
-  // Utility: Mapper 인터페이스 → 엔티티 클래스
-  // ===========================================
-  @SuppressWarnings("unchecked")
-  private static <E> Class<E> extractEntityClassFromMapper(Class<?> mapperInterface) {
-    // (1) mapperInterface가 implements한 Generic Interfaces 확인
-    Type[] genericIfs = mapperInterface.getGenericInterfaces();
-    for (Type t : genericIfs) {
-      if (t instanceof ParameterizedType) {
-        ParameterizedType pt = (ParameterizedType) t;
-        if (pt.getRawType() == MybatisRepository.class) {
-          Type actual = pt.getActualTypeArguments()[0];
-          if (actual instanceof Class) {
-            return (Class<E>) actual;
-          }
-        }
-      }
-    }
-    // (2) 부모 인터페이스 재귀 탐색
-    for (Class<?> parentIf : mapperInterface.getInterfaces()) {
-      Class<E> found = extractEntityClassFromMapper(parentIf);
-      if (found != null) {
-        return found;
-      }
-    }
-    return null;
   }
 
   // ===========================================
@@ -315,13 +281,4 @@ public class MybatisCommand {
     }
     return map;
   }
-
-  // ===========================================
-  // static 접근용 헬퍼 인스턴스 (ProviderContext가 static 메서드를 호출하기 위해)
-  // ===========================================
-  private static final MybatisStringHelper stringHelperStatic = new MybatisStringHelper();
-  private static final MybatisEntityHelper entityHelperStatic =
-      new MybatisEntityHelper(stringHelperStatic);
-  private static final MybatisClauseBuilder staticClauseBuilder =
-      new MybatisClauseBuilder(stringHelperStatic, entityHelperStatic);
 }

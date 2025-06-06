@@ -3,15 +3,16 @@ package io.github.bestheroz.mybatis;
 import jakarta.persistence.Column;
 import jakarta.persistence.Table;
 import java.lang.reflect.Field;
-import java.util.*;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class MybatisEntityHelper {
-  private static final Logger log = LoggerFactory.getLogger(MybatisEntityHelper.class);
-
   private final MybatisStringHelper stringHelper;
 
   public MybatisEntityHelper(MybatisStringHelper stringHelper) {
@@ -87,6 +88,34 @@ public class MybatisEntityHelper {
         return curr.getDeclaredField(fieldName);
       } catch (NoSuchFieldException e) {
         curr = curr.getSuperclass();
+      }
+    }
+    return null;
+  }
+
+  // ===========================================
+  // Utility: Mapper 인터페이스 → 엔티티 클래스
+  // ===========================================
+  @SuppressWarnings("unchecked")
+  public <E> Class<E> extractEntityClassFromMapper(Class<?> mapperInterface) {
+    // (1) mapperInterface가 implements한 Generic Interfaces 확인
+    Type[] genericIfs = mapperInterface.getGenericInterfaces();
+    for (Type t : genericIfs) {
+      if (t instanceof ParameterizedType) {
+        ParameterizedType pt = (ParameterizedType) t;
+        if (pt.getRawType() == MybatisRepository.class) {
+          Type actual = pt.getActualTypeArguments()[0];
+          if (actual instanceof Class) {
+            return (Class<E>) actual;
+          }
+        }
+      }
+    }
+    // (2) 부모 인터페이스 재귀 탐색
+    for (Class<?> parentIf : mapperInterface.getInterfaces()) {
+      Class<E> found = extractEntityClassFromMapper(parentIf);
+      if (found != null) {
+        return found;
       }
     }
     return null;
