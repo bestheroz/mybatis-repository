@@ -87,7 +87,6 @@ public class MybatisEntityHelper {
         allFields.stream()
             .filter(
                 field -> {
-                  // (1) 필드 레벨 @Column이 붙어 있는지 확인
                   for (Annotation ann : field.getAnnotations()) {
                     String annType = ann.annotationType().getName();
                     if (annType.equals("jakarta.persistence.Column")
