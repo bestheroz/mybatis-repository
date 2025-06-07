@@ -128,7 +128,6 @@ public class MybatisEntityHelper {
             } catch (Exception e) {
               // reflection 호출 중 예외 발생 시 무시하고 다음 어노테이션 검사
             }
-          } else {
             return stringHelper.getCamelCaseToSnakeCase(fieldName);
           }
         }
