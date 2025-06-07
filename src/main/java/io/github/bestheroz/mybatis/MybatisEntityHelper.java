@@ -138,7 +138,7 @@ public class MybatisEntityHelper {
     log.error("entity 에 포함되지 않는 필드 발견 : {}", fieldName);
     log.error(
         "entity 필드 목록: {}",
-        Arrays.stream(entityClass.getDeclaredFields())
+        Arrays.stream(getAllNonExcludedFields(entityClass))
             .map(Field::getName)
             .collect(Collectors.joining(", ")));
     throw new MybatisRepositoryException("entity 에 포함되지 않는 필드 발견 : " + fieldName);
