@@ -139,22 +139,17 @@ public class MybatisCommand {
   // ===========================================
   // 4) INSERT ONE
   // ===========================================
-  public <T> String buildInsertSQL(ProviderContext context, T entity) {
+  public <T> String buildInsertSQL(T entity) {
     if (entity == null) {
       throw new MybatisRepositoryException("entity is null for insert");
     }
-    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
-    if (entityClass == null) {
-      throw new MybatisRepositoryException(
-          "cannot determine entity class for insert: " + context.getMapperType().getName());
-    }
 
-    String tableName = entityHelper.getTableName(entityClass);
+    String tableName = entityHelper.getTableName(entity.getClass());
     SQL sql = new SQL().INSERT_INTO(tableName);
 
     Map<String, Object> entityMap = toMap(entity);
     for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
-      String columnName = entityHelper.getColumnName(entityClass, entry.getKey());
+      String columnName = entityHelper.getColumnName(entity.getClass(), entry.getKey());
       sql.VALUES(
           stringHelper.wrapIdentifier(columnName),
           clauseBuilder.formatValueForSQL(entry.getValue()));
@@ -167,25 +162,20 @@ public class MybatisCommand {
   // ===========================================
   // 5) INSERT BATCH
   // ===========================================
-  public <T> String buildInsertBatchSQL(ProviderContext context, List<T> entities) {
+  public <T> String buildInsertBatchSQL(List<T> entities) {
     if (entities == null || entities.isEmpty()) {
       throw new MybatisRepositoryException("entities empty for insertBatch");
     }
-    Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
-    if (entityClass == null) {
-      throw new MybatisRepositoryException(
-          "cannot determine entity class for insertBatch: " + context.getMapperType().getName());
-    }
 
-    String tableName = entityHelper.getTableName(entityClass);
-    Set<String> columns = entityHelper.getEntityFields(entityClass);
+    String tableName = entityHelper.getTableName(entities.get(0).getClass());
+    Set<String> columns = entityHelper.getEntityFields(entities.get(0).getClass());
 
     // INSERT INTO table (col1, col2, …)
     String wrappedTable = stringHelper.wrapIdentifier(tableName);
     SQL sql = new SQL().INSERT_INTO(wrappedTable);
     String columnsJoined =
         columns.stream()
-            .map(v -> entityHelper.getColumnName(entityClass, v))
+            .map(v -> entityHelper.getColumnName(entities.get(0).getClass(), v))
             .map(stringHelper::wrapIdentifier)
             .collect(Collectors.joining(", "));
     sql.INTO_COLUMNS(columnsJoined);

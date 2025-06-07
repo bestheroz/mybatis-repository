@@ -369,18 +369,18 @@ public interface MybatisRepository<T> {
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT)
   @Options(useGeneratedKeys = true, keyProperty = "id")
-  void buildInsertSQL(ProviderContext context, final T entity);
+  void buildInsertSQL(final T entity);
 
   default void insert(final T entity) {
-    this.buildInsertSQL(null, entity);
+    this.buildInsertSQL(entity);
   }
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT_BATCH)
   @Options(useGeneratedKeys = true, keyProperty = "id")
-  void buildInsertBatchSQL(ProviderContext context, final List<T> entities);
+  void buildInsertBatchSQL(final List<T> entities);
 
   default void insertBatch(final List<T> entities) {
-    this.buildInsertBatchSQL(null, entities);
+    this.buildInsertBatchSQL(entities);
   }
 
   @UpdateProvider(type = MybatisCommand.class, method = MybatisCommand.UPDATE_MAP_BY_MAP)
