@@ -1,9 +1,8 @@
 package io.github.bestheroz.mybatis;
 
+import java.util.*;
 import org.apache.ibatis.annotations.*;
 import org.apache.ibatis.builder.annotation.ProviderContext;
-
-import java.util.*;
 
 public interface MybatisHasIdRepository<T> {
   @SelectProvider(type = MybatisCommand.class, method = MybatisCommand.SELECT_ITEMS)
