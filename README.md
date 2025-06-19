@@ -56,6 +56,15 @@ dependencies {
 public interface UserRepository extends MybatisRepository<User> {}
 ```
 
+Id 를 가진 엔티티의 리포지토리는 아래와 같이 설정해주세요.<br>
+(`@Options(useGeneratedKeys = true, keyProperty = "id")` 가 포함되어 있습니다.)
+
+```java
+@Mapper
+@Repository
+public interface UserRepository extends MybatisHasIdRepository<User> {}
+```
+
 ### 서비스 생성
 
 서비스 계층에서 리포지토리를 활용하여 CRUD 작업을 수행합니다.
