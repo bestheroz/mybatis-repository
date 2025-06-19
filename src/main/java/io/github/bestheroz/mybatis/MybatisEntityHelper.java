@@ -166,7 +166,7 @@ public class MybatisEntityHelper {
     for (Type t : genericIfs) {
       if (t instanceof ParameterizedType) {
         ParameterizedType pt = (ParameterizedType) t;
-        if (pt.getRawType() == MybatisRepository.class) {
+        if (pt.getRawType() == MybatisRepository.class || pt.getRawType() == MybatisNoIdRepository.class) {
           Type actual = pt.getActualTypeArguments()[0];
           if (actual instanceof Class) {
             return (Class<E>) actual;

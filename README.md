@@ -56,13 +56,13 @@ dependencies {
 public interface UserRepository extends MybatisRepository<User> {}
 ```
 
-Id 를 가진 엔티티의 리포지토리는 아래와 같이 설정해주세요.<br>
-(`@Options(useGeneratedKeys = true, keyProperty = "id")` 가 포함되어 있습니다.)
+Id 를 가지지않은 엔티티의 리포지토리는 아래와 같이 설정해주세요.<br>
+(`@InsertProvider` 에 `@Options(useGeneratedKeys = true, keyProperty = "id")` 가 제거되어 있습니다.)
 
 ```java
 @Mapper
 @Repository
-public interface UserRepository extends MybatisHasIdRepository<User> {}
+public interface UserRepository extends MybatisNoIdRepository<User> {}
 ```
 
 ### 서비스 생성
