@@ -1,14 +1,11 @@
 package io.github.bestheroz.mybatis;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import org.apache.ibatis.annotations.*;
 import org.apache.ibatis.builder.annotation.ProviderContext;
 
-public interface MybatisRepository<T> {
+import java.util.*;
+
+public interface MybatisHasIdRepository<T> {
   @SelectProvider(type = MybatisCommand.class, method = MybatisCommand.SELECT_ITEMS)
   List<T> buildSelectSQL(
       ProviderContext context,
@@ -368,6 +365,7 @@ public interface MybatisRepository<T> {
   }
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT)
+  @Options(useGeneratedKeys = true, keyProperty = "id")
   void buildInsertSQL(final T entity);
 
   default void insert(final T entity) {
@@ -375,6 +373,7 @@ public interface MybatisRepository<T> {
   }
 
   @InsertProvider(type = MybatisCommand.class, method = MybatisCommand.INSERT_BATCH)
+  @Options(useGeneratedKeys = true, keyProperty = "id")
   void buildInsertBatchSQL(final List<T> entities);
 
   default void insertBatch(final List<T> entities) {
