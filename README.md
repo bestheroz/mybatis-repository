@@ -31,7 +31,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.7.0'
+    implementation 'io.github.bestheroz:mybatis-repository:0.7.1'
 }
 ```
 
@@ -41,7 +41,7 @@ dependencies {
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.7.0</version>
+    <version>0.7.1</version>
 </dependency>
 ```
 ## 사용 방법

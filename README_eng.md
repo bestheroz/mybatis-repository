@@ -32,7 +32,7 @@ Add the following dependency to your `build.gradle`:
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.7.0'
+    implementation 'io.github.bestheroz:mybatis-repository:0.7.1'
 }
 ```
 
@@ -42,7 +42,7 @@ Or add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.7.0</version>
+    <version>0.7.1</version>
 </dependency>
 ```
 
