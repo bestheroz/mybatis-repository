@@ -6,7 +6,7 @@ public class MybatisRepositoryProperties {
   // 기본값들
   private static final int DEFAULT_MAX_IN_CLAUSE_SIZE = 1000;
   private static final int DEFAULT_MAX_STRING_VALUE_LENGTH = 4000;
-  private static final int DEFAULT_MAX_IDENTIFIER_LENGTH = 128;
+  private static final int DEFAULT_MAX_IDENTIFIER_LENGTH = 256;
 
   // 실제 설정값들
   private int maxInClauseSize = DEFAULT_MAX_IN_CLAUSE_SIZE;

@@ -261,16 +261,6 @@ public class MybatisStringHelper {
 
     // SQL 키워드 차단
     String upperIdentifier = identifier.toUpperCase();
-    if (SQL_KEYWORDS.contains(upperIdentifier)) {
-      return false;
-    }
-
-    // 예약어 및 위험한 패턴 추가 차단
-    return !upperIdentifier.startsWith("SYS")
-        && !upperIdentifier.startsWith("XP_")
-        && !upperIdentifier.startsWith("SP_")
-        && !upperIdentifier.contains("EXEC")
-        && !upperIdentifier.contains("EVAL")
-        && !upperIdentifier.contains("SCRIPT");
+    return !SQL_KEYWORDS.contains(upperIdentifier);
   }
 }
