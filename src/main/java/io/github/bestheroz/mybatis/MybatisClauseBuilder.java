@@ -16,8 +16,9 @@ public class MybatisClauseBuilder {
   // 상수 정의
   private static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
   private static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
-  private static final int MAX_IN_CLAUSE_SIZE = 1000;
-  private static final int MAX_STRING_VALUE_LENGTH = 4000;
+
+  // 설정 가능한 값들을 위한 Properties 참조
+  private final MybatisRepositoryProperties properties;
 
   // 스레드 안전한 DateTimeFormatter 사용
   private static final DateTimeFormatter DATETIME_FORMATTER =
@@ -31,6 +32,16 @@ public class MybatisClauseBuilder {
   public MybatisClauseBuilder(MybatisStringHelper stringHelper, MybatisEntityHelper entityHelper) {
     this.stringHelper = stringHelper;
     this.entityHelper = entityHelper;
+    this.properties = MybatisRepositoryProperties.getInstance();
+  }
+
+  public MybatisClauseBuilder(
+      MybatisStringHelper stringHelper,
+      MybatisEntityHelper entityHelper,
+      MybatisRepositoryProperties properties) {
+    this.stringHelper = stringHelper;
+    this.entityHelper = entityHelper;
+    this.properties = properties != null ? properties : MybatisRepositoryProperties.getInstance();
   }
 
   /**
@@ -173,10 +184,10 @@ public class MybatisClauseBuilder {
       throw new MybatisRepositoryException("WHERE - empty in clause : " + dbColumnName);
     }
 
-    if (inValues.size() > MAX_IN_CLAUSE_SIZE) {
+    if (inValues.size() > properties.getMaxInClauseSize()) {
       throw new MybatisRepositoryException(
           "IN clause size exceeds maximum limit: "
-              + MAX_IN_CLAUSE_SIZE
+              + properties.getMaxInClauseSize()
               + ", actual: "
               + inValues.size());
     }
@@ -227,12 +238,12 @@ public class MybatisClauseBuilder {
     }
     // 기타 객체는 문자열로 변환 후 이스케이프
     String stringValue = value.toString();
-    if (stringValue.length() > MAX_STRING_VALUE_LENGTH) {
+    if (stringValue.length() > properties.getMaxStringValueLength()) {
       throw new MybatisRepositoryException(
           "Value too long for SQL: "
               + stringValue.length()
               + ", max allowed: "
-              + MAX_STRING_VALUE_LENGTH);
+              + properties.getMaxStringValueLength());
     }
     return "'" + stringHelper.escapeSingleQuote(stringValue) + "'";
   }

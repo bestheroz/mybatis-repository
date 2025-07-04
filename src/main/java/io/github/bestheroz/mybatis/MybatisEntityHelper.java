@@ -8,7 +8,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +59,7 @@ public class MybatisEntityHelper {
 
   /** 엔티티 클래스에 붙은 모든 @Column 어노테이션 필드명(자바 필드 이름) 집합을 반환. */
   protected Set<String> getEntityFields(final Class<?> entityClass) {
-    return Stream.of(getAllNonExcludedFields(entityClass))
+    return getAllNonExcludedFields(entityClass).stream()
         .map(Field::getName)
         .collect(Collectors.toSet());
   }
@@ -70,7 +69,7 @@ public class MybatisEntityHelper {
    *
    * <p>- jakarta.persistence.Column 또는 javax.persistence.Column 둘 다 처리 - 없으면 빈 배열 반환
    */
-  protected static Field[] getAllNonExcludedFields(final Class<?> clazz) {
+  protected static List<Field> getAllNonExcludedFields(final Class<?> clazz) {
     return MybatisCommand.FIELD_CACHE.computeIfAbsent(
         clazz,
         entityClass -> {
@@ -81,20 +80,24 @@ public class MybatisEntityHelper {
             current = current.getSuperclass();
           }
 
-          return allFields.stream()
-              .filter(
-                  field -> {
-                    for (Annotation ann : field.getAnnotations()) {
-                      String annType = ann.annotationType().getName();
-                      if (annType.equals("jakarta.persistence.Column")
-                          || annType.equals("javax.persistence.Column")) {
-                        return true;
-                      }
-                    }
-                    return false;
-                  })
-              .distinct()
-              .toArray(Field[]::new);
+          List<Field> filteredFields =
+              allFields.stream()
+                  .filter(
+                      field -> {
+                        for (Annotation ann : field.getAnnotations()) {
+                          String annType = ann.annotationType().getName();
+                          if (annType.equals("jakarta.persistence.Column")
+                              || annType.equals("javax.persistence.Column")) {
+                            return true;
+                          }
+                        }
+                        return false;
+                      })
+                  .distinct()
+                  .collect(Collectors.toList());
+
+          // 불변 리스트로 만들어 thread safety 보장
+          return Collections.unmodifiableList(filteredFields);
         });
   }
 
@@ -133,11 +136,14 @@ public class MybatisEntityHelper {
       log.warn("Error while getting column name for field '{}': {}", fieldName, e.getMessage());
     }
     log.error("entity 에 포함되지 않는 필드 발견 : {}", fieldName);
-    log.error(
-        "entity 필드 목록: {}",
-        Arrays.stream(getAllNonExcludedFields(entityClass))
-            .map(Field::getName)
-            .collect(Collectors.joining(", ")));
+    // 보안상 프로덕션 환경에서는 상세 정보 노출 방지
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "entity 필드 목록: {}",
+          getAllNonExcludedFields(entityClass).stream()
+              .map(Field::getName)
+              .collect(Collectors.joining(", ")));
+    }
     throw new MybatisRepositoryException("entity 에 포함되지 않는 필드 발견 : " + fieldName);
   }
 

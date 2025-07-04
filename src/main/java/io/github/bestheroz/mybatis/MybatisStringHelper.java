@@ -6,6 +6,10 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 public class MybatisStringHelper {
   private static final String SEPARATOR = ":";
@@ -129,52 +133,144 @@ public class MybatisStringHelper {
     return "`" + identifier + "`";
   }
 
+  // 확장된 SQL 키워드 목록 (고정 비용 절약을 위해 static)
+  private static final Set<String> SQL_KEYWORDS =
+      Collections.unmodifiableSet(
+          new HashSet<>(
+              Arrays.asList(
+                  "SELECT",
+                  "INSERT",
+                  "UPDATE",
+                  "DELETE",
+                  "DROP",
+                  "CREATE",
+                  "ALTER",
+                  "TRUNCATE",
+                  "UNION",
+                  "OR",
+                  "AND",
+                  "WHERE",
+                  "FROM",
+                  "JOIN",
+                  "HAVING",
+                  "GROUP",
+                  "ORDER",
+                  "EXEC",
+                  "EXECUTE",
+                  "DECLARE",
+                  "CAST",
+                  "CONVERT",
+                  "CHAR",
+                  "VARCHAR",
+                  "NCHAR",
+                  "NVARCHAR",
+                  "SCRIPT",
+                  "JAVASCRIPT",
+                  "VBSCRIPT",
+                  "ONLOAD",
+                  "ONERROR",
+                  // 추가 위험 키워드
+                  "INFORMATION_SCHEMA",
+                  "SYS",
+                  "SYSOBJECTS",
+                  "SYSCOLUMNS",
+                  "MASTER",
+                  "MSDB",
+                  "TEMPDB",
+                  "MODEL",
+                  "XPCMDSHELL",
+                  "OPENROWSET",
+                  "OPENDATASOURCE",
+                  "BULK",
+                  "BACKUP",
+                  "RESTORE",
+                  "SHUTDOWN",
+                  "RECONFIGURE",
+                  "KILL",
+                  "WAITFOR",
+                  "DBCC",
+                  "USE",
+                  "GRANT",
+                  "REVOKE",
+                  "DENY",
+                  "IMPERSONATE",
+                  "OPENQUERY",
+                  "LINKED",
+                  "SERVER",
+                  "PIVOT",
+                  "UNPIVOT",
+                  "MERGE",
+                  "OUTPUT",
+                  "INSERTED",
+                  "DELETED",
+                  "CROSS",
+                  "APPLY",
+                  "OUTER",
+                  "INNER",
+                  "LEFT",
+                  "RIGHT",
+                  "FULL",
+                  "CASE",
+                  "WHEN",
+                  "THEN",
+                  "ELSE",
+                  "END",
+                  "EXISTS",
+                  "NOT",
+                  "IN",
+                  "LIKE",
+                  "BETWEEN",
+                  "IS",
+                  "NULL",
+                  "DISTINCT",
+                  "TOP",
+                  "PERCENT",
+                  "WITH",
+                  "TIES",
+                  "OFFSET",
+                  "FETCH",
+                  "NEXT",
+                  "ROWS",
+                  "ONLY",
+                  "PARTITION",
+                  "OVER",
+                  "ROW_NUMBER",
+                  "RANK",
+                  "DENSE_RANK",
+                  "NTILE",
+                  "LAG",
+                  "LEAD",
+                  "FIRST_VALUE",
+                  "LAST_VALUE")));
+
   private boolean isValidIdentifier(String identifier) {
-    // 기본적인 SQL 식별자 규칙: 알파벳으로 시작, 알파벳/숫자/언더스코어만 포함
+    // 기본 검증
+    if (identifier == null || identifier.isEmpty()) {
+      return false;
+    }
+
+    // 길이 제한 (SQL 식별자 최대 길이)
+    if (identifier.length() > MybatisRepositoryProperties.getInstance().getMaxIdentifierLength()) {
+      return false;
+    }
+
+    // 화이트리스트 방식: 오직 알파벳으로 시작하고 알파벳/숫자/언더스코어만 포함
     if (!identifier.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
       return false;
     }
+
     // SQL 키워드 차단
-    String[] sqlKeywords = {
-      "SELECT",
-      "INSERT",
-      "UPDATE",
-      "DELETE",
-      "DROP",
-      "CREATE",
-      "ALTER",
-      "TRUNCATE",
-      "UNION",
-      "OR",
-      "AND",
-      "WHERE",
-      "FROM",
-      "JOIN",
-      "HAVING",
-      "GROUP",
-      "ORDER",
-      "EXEC",
-      "EXECUTE",
-      "DECLARE",
-      "CAST",
-      "CONVERT",
-      "CHAR",
-      "VARCHAR",
-      "NCHAR",
-      "NVARCHAR",
-      "SCRIPT",
-      "JAVASCRIPT",
-      "VBSCRIPT",
-      "ONLOAD",
-      "ONERROR",
-      "SCRIPT"
-    };
     String upperIdentifier = identifier.toUpperCase();
-    for (String keyword : sqlKeywords) {
-      if (upperIdentifier.equals(keyword)) {
-        return false;
-      }
+    if (SQL_KEYWORDS.contains(upperIdentifier)) {
+      return false;
     }
-    return true;
+
+    // 예약어 및 위험한 패턴 추가 차단
+    return !upperIdentifier.startsWith("SYS")
+        && !upperIdentifier.startsWith("XP_")
+        && !upperIdentifier.startsWith("SP_")
+        && !upperIdentifier.contains("EXEC")
+        && !upperIdentifier.contains("EVAL")
+        && !upperIdentifier.contains("SCRIPT");
   }
 }

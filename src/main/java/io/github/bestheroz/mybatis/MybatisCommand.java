@@ -14,9 +14,9 @@ public class MybatisCommand {
   private static final Logger log = LoggerFactory.getLogger(MybatisCommand.class);
 
   // ======================
-  // Caches
+  // Thread-safe Caches
   // ======================
-  protected static final Map<Class<?>, Field[]> FIELD_CACHE = new ConcurrentHashMap<>();
+  protected static final Map<Class<?>, List<Field>> FIELD_CACHE = new ConcurrentHashMap<>();
   protected static final Map<Class<?>, String> TABLE_NAME_CACHE = new ConcurrentHashMap<>();
 
   // ======================
@@ -46,10 +46,21 @@ public class MybatisCommand {
   private final MybatisStringHelper stringHelper;
   private final MybatisClauseBuilder clauseBuilder;
 
+  // 싱글톤 인스턴스들 (성능 최적화)
+  private static final MybatisStringHelper SHARED_STRING_HELPER = new MybatisStringHelper();
+  private static final MybatisEntityHelper SHARED_ENTITY_HELPER =
+      new MybatisEntityHelper(SHARED_STRING_HELPER);
+  private static final MybatisClauseBuilder SHARED_CLAUSE_BUILDER =
+      new MybatisClauseBuilder(SHARED_STRING_HELPER, SHARED_ENTITY_HELPER);
+
+  // 상수로 정의하여 객체 생성 방지
+  private static final Set<String> EMPTY_SET = Collections.emptySet();
+  private static final List<String> EMPTY_LIST = Collections.emptyList();
+
   public MybatisCommand() {
-    this.stringHelper = new MybatisStringHelper();
-    this.entityHelper = new MybatisEntityHelper(stringHelper);
-    this.clauseBuilder = new MybatisClauseBuilder(stringHelper, entityHelper);
+    this.stringHelper = SHARED_STRING_HELPER;
+    this.entityHelper = SHARED_ENTITY_HELPER;
+    this.clauseBuilder = SHARED_CLAUSE_BUILDER;
   }
 
   public MybatisCommand(
@@ -85,14 +96,7 @@ public class MybatisCommand {
     if (whereConditions == null || whereConditions.isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for getItemByMap");
     }
-    return buildSelectSQL(
-        context,
-        Collections.emptySet(),
-        Collections.emptySet(),
-        whereConditions,
-        Collections.emptyList(),
-        null,
-        null);
+    return buildSelectSQL(context, EMPTY_SET, EMPTY_SET, whereConditions, EMPTY_LIST, null, null);
   }
 
   // ===========================================
@@ -269,15 +273,24 @@ public class MybatisCommand {
   // (이제 entityClass를 넘겨 받아서 필터링 처리)
   // ===========================================
   public static Map<String, Object> toMap(final Object source) {
+    if (source == null) {
+      throw new MybatisRepositoryException("Source object cannot be null");
+    }
+
     Map<String, Object> map = new HashMap<>();
-    Field[] fields = MybatisEntityHelper.getAllNonExcludedFields(source.getClass());
+    List<Field> fields = MybatisEntityHelper.getAllNonExcludedFields(source.getClass());
+
     for (Field field : fields) {
-      field.setAccessible(true);
       try {
-        Object val = field.get(source);
-        map.put(field.getName(), val);
+        // Thread-safe field access
+        synchronized (field) {
+          field.setAccessible(true);
+          Object val = field.get(source);
+          map.put(field.getName(), val);
+        }
       } catch (Exception e) {
-        log.warn(MybatisStringHelper.getStackTrace(e));
+        log.warn("Failed to get field value for {}: {}", field.getName(), e.getMessage());
+        log.debug("Stack trace: ", e);
       }
     }
     return map;
