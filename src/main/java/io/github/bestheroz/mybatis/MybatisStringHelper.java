@@ -25,7 +25,7 @@ public class MybatisStringHelper {
         .replace("\t", "\\t")
         .replace("\b", "\\b")
         .replace("\f", "\\f")
-        .replace("\"2", "\\\"")
+        .replace("\"", "\\\"")
         .replace("\u001A", "\\Z");
   }
 

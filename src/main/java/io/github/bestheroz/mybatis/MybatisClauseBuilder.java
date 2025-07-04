@@ -2,7 +2,6 @@ package io.github.bestheroz.mybatis;
 
 import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import io.github.bestheroz.mybatis.type.ValueEnum;
-import java.text.SimpleDateFormat;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -14,20 +13,24 @@ import org.slf4j.LoggerFactory;
 public class MybatisClauseBuilder {
   private static final Logger log = LoggerFactory.getLogger(MybatisClauseBuilder.class);
 
+  // 상수 정의
+  private static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
+  private static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
+  private static final int MAX_IN_CLAUSE_SIZE = 1000;
+  private static final int MAX_STRING_VALUE_LENGTH = 4000;
+
+  // 스레드 안전한 DateTimeFormatter 사용
+  private static final DateTimeFormatter DATETIME_FORMATTER =
+      DateTimeFormatter.ofPattern(DEFAULT_DATETIME_FORMAT);
+  private static final DateTimeFormatter DATE_FORMATTER =
+      DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT);
+
   private final MybatisStringHelper stringHelper;
   private final MybatisEntityHelper entityHelper;
 
   public MybatisClauseBuilder(MybatisStringHelper stringHelper, MybatisEntityHelper entityHelper) {
     this.stringHelper = stringHelper;
     this.entityHelper = entityHelper;
-  }
-
-  /** WHERE 조건이 null 또는 비어 있으면 예외 처리 */
-  protected void validateWhereConditions(final Map<String, Object> whereConditions) {
-    if (whereConditions == null || whereConditions.isEmpty()) {
-      log.warn("whereConditions is empty");
-      throw new MybatisRepositoryException("'where' Conditions is required");
-    }
   }
 
   /**
@@ -170,6 +173,14 @@ public class MybatisClauseBuilder {
       throw new MybatisRepositoryException("WHERE - empty in clause : " + dbColumnName);
     }
 
+    if (inValues.size() > MAX_IN_CLAUSE_SIZE) {
+      throw new MybatisRepositoryException(
+          "IN clause size exceeds maximum limit: "
+              + MAX_IN_CLAUSE_SIZE
+              + ", actual: "
+              + inValues.size());
+    }
+
     String inFormatted =
         inValues.stream().map(this::formatValueForSQL).collect(Collectors.joining(", "));
     return String.format("`%s` %s IN (%s)", dbColumnName, (isNotIn ? "NOT" : ""), inFormatted);
@@ -186,22 +197,23 @@ public class MybatisClauseBuilder {
     if (value == null) {
       return "null";
     }
+
     if (value instanceof String) {
       return formatStringValue((String) value);
     } else if (value instanceof Instant) {
-      return "'" + stringHelper.instantToString((Instant) value, "yyyy-MM-dd HH:mm:ss.SSS") + "'";
+      return "'" + stringHelper.instantToString((Instant) value, DEFAULT_DATETIME_FORMAT) + "'";
     } else if (value instanceof Date) {
-      return "'" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(value) + "'";
-    } else if (value instanceof LocalDateTime) {
       return "'"
-          + ((LocalDateTime) value).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))
+          + ((Date) value).toInstant().atZone(ZoneId.systemDefault()).format(DATETIME_FORMATTER)
           + "'";
+    } else if (value instanceof LocalDateTime) {
+      return "'" + ((LocalDateTime) value).format(DATETIME_FORMATTER) + "'";
     } else if (value instanceof LocalDate) {
-      return "'" + ((LocalDate) value).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + "'";
+      return "'" + ((LocalDate) value).format(DATE_FORMATTER) + "'";
     } else if (value instanceof OffsetDateTime) {
       return "'"
           + stringHelper.instantToString(
-              ((OffsetDateTime) value).toInstant(), "yyyy-MM-dd HH:mm:ss.SSS")
+              ((OffsetDateTime) value).toInstant(), DEFAULT_DATETIME_FORMAT)
           + "'";
     } else if (value instanceof Enum) {
       return formatEnumValue((Enum<?>) value);
@@ -209,9 +221,20 @@ public class MybatisClauseBuilder {
       return formatCollectionValue((Collection<?>) value);
     } else if (value instanceof Map) {
       return formatMapValue((Map<?, ?>) value);
+    } else if (value instanceof Number || value instanceof Boolean) {
+      // 숫자와 Boolean은 안전하게 처리
+      return value.toString();
     }
-    // 숫자, Boolean 등등 기본 toString(); 단, 문자열 내 단일인용부호 이스케이프
-    return stringHelper.escapeSingleQuote(value.toString());
+    // 기타 객체는 문자열로 변환 후 이스케이프
+    String stringValue = value.toString();
+    if (stringValue.length() > MAX_STRING_VALUE_LENGTH) {
+      throw new MybatisRepositoryException(
+          "Value too long for SQL: "
+              + stringValue.length()
+              + ", max allowed: "
+              + MAX_STRING_VALUE_LENGTH);
+    }
+    return "'" + stringHelper.escapeSingleQuote(stringValue) + "'";
   }
 
   private String formatStringValue(final String str) {
