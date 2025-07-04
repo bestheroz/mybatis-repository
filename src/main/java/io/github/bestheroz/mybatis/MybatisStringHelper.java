@@ -13,7 +13,20 @@ public class MybatisStringHelper {
   public MybatisStringHelper() {}
 
   protected String escapeSingleQuote(String src) {
-    return src.replace("'", "''");
+    if (src == null) {
+      return null;
+    }
+    // SQL injection 방지를 위한 추가 이스케이프
+    return src.replace("'", "''")
+        .replace("\\", "\\\\")
+        .replace("\0", "\\0")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\"2", "\\\"")
+        .replace("\u001A", "\\Z");
   }
 
   protected String substringBetween(String str, String open, String close) {
@@ -73,6 +86,9 @@ public class MybatisStringHelper {
   }
 
   protected String getCamelCaseToSnakeCase(final String str) {
+    if (str == null || str.isEmpty()) {
+      return str;
+    }
     StringBuilder sb = new StringBuilder(str.length() * 2);
     sb.append(Character.toLowerCase(str.charAt(0)));
     for (int i = 1; i < str.length(); i++) {
@@ -92,14 +108,73 @@ public class MybatisStringHelper {
   }
 
   public static String getStackTrace(Throwable e) {
-    StringWriter sw = new StringWriter();
-    PrintWriter pw = new PrintWriter(sw);
-    e.printStackTrace(pw);
-    return sw.toString();
+    try (StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw)) {
+      e.printStackTrace(pw);
+      return sw.toString();
+    } catch (Exception ex) {
+      return "Error generating stack trace: " + ex.getMessage();
+    }
   }
 
   protected String wrapIdentifier(final String identifier) {
+    if (identifier == null || identifier.isEmpty()) {
+      throw new IllegalArgumentException("Identifier cannot be null or empty");
+    }
+    // SQL injection 방지를 위한 식별자 검증
+    if (!isValidIdentifier(identifier)) {
+      throw new IllegalArgumentException("Invalid identifier: " + identifier);
+    }
     // DBMS마다 다를 수 있으나, 예시로 백틱(`)을 사용
     return "`" + identifier + "`";
+  }
+
+  private boolean isValidIdentifier(String identifier) {
+    // 기본적인 SQL 식별자 규칙: 알파벳으로 시작, 알파벳/숫자/언더스코어만 포함
+    if (!identifier.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
+      return false;
+    }
+    // SQL 키워드 차단
+    String[] sqlKeywords = {
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "DROP",
+      "CREATE",
+      "ALTER",
+      "TRUNCATE",
+      "UNION",
+      "OR",
+      "AND",
+      "WHERE",
+      "FROM",
+      "JOIN",
+      "HAVING",
+      "GROUP",
+      "ORDER",
+      "EXEC",
+      "EXECUTE",
+      "DECLARE",
+      "CAST",
+      "CONVERT",
+      "CHAR",
+      "VARCHAR",
+      "NCHAR",
+      "NVARCHAR",
+      "SCRIPT",
+      "JAVASCRIPT",
+      "VBSCRIPT",
+      "ONLOAD",
+      "ONERROR",
+      "SCRIPT"
+    };
+    String upperIdentifier = identifier.toUpperCase();
+    for (String keyword : sqlKeywords) {
+      if (upperIdentifier.equals(keyword)) {
+        return false;
+      }
+    }
+    return true;
   }
 }

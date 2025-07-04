@@ -26,37 +26,36 @@ public class MybatisEntityHelper {
    * CamelCase→snake_case 로 변환
    */
   protected String getTableName(final Class<?> entityClass) {
-    if (MybatisCommand.TABLE_NAME_CACHE.containsKey(entityClass)) {
-      return MybatisCommand.TABLE_NAME_CACHE.get(entityClass);
-    }
+    return MybatisCommand.TABLE_NAME_CACHE.computeIfAbsent(
+        entityClass,
+        clazz -> {
+          String tableName = null;
 
-    String tableName = null;
-
-    // @Table 어노테이션이 붙어 있다면 name() 값을 읽어옴
-    for (Annotation ann : entityClass.getAnnotations()) {
-      String annType = ann.annotationType().getName();
-      if (annType.equals("jakarta.persistence.Table")
-          || annType.equals("javax.persistence.Table")) {
-        try {
-          Method nameMethod = ann.annotationType().getMethod("name");
-          Object value = nameMethod.invoke(ann);
-          if (value instanceof String && !((String) value).isEmpty()) {
-            tableName = (String) value;
-            break;
+          // @Table 어노테이션이 붙어 있다면 name() 값을 읽어옴
+          for (Annotation ann : clazz.getAnnotations()) {
+            String annType = ann.annotationType().getName();
+            if (annType.equals("jakarta.persistence.Table")
+                || annType.equals("javax.persistence.Table")) {
+              try {
+                Method nameMethod = ann.annotationType().getMethod("name");
+                Object value = nameMethod.invoke(ann);
+                if (value instanceof String && !((String) value).isEmpty()) {
+                  tableName = (String) value;
+                  break;
+                }
+              } catch (Exception e) {
+                log.debug("Failed to get table name from @Table annotation: {}", e.getMessage());
+              }
+            }
           }
-        } catch (Exception ignore) {
-          // 없거나 예외 발생 시 무시
-        }
-      }
-    }
 
-    // @Table이 없거나 name()이 비어 있으면 CamelCase→snake_case
-    if (tableName == null) {
-      tableName = stringHelper.getCamelCaseToSnakeCase(entityClass.getSimpleName()).toLowerCase();
-    }
+          // @Table이 없거나 name()이 비어 있으면 CamelCase→snake_case
+          if (tableName == null) {
+            tableName = stringHelper.getCamelCaseToSnakeCase(clazz.getSimpleName()).toLowerCase();
+          }
 
-    MybatisCommand.TABLE_NAME_CACHE.put(entityClass, tableName);
-    return tableName;
+          return tableName;
+        });
   }
 
   /** 엔티티 클래스에 붙은 모든 @Column 어노테이션 필드명(자바 필드 이름) 집합을 반환. */
@@ -72,35 +71,31 @@ public class MybatisEntityHelper {
    * <p>- jakarta.persistence.Column 또는 javax.persistence.Column 둘 다 처리 - 없으면 빈 배열 반환
    */
   protected static Field[] getAllNonExcludedFields(final Class<?> clazz) {
-    if (MybatisCommand.FIELD_CACHE.containsKey(clazz)) {
-      return MybatisCommand.FIELD_CACHE.get(clazz);
-    }
+    return MybatisCommand.FIELD_CACHE.computeIfAbsent(
+        clazz,
+        entityClass -> {
+          List<Field> allFields = new ArrayList<>();
+          Class<?> current = entityClass;
+          while (current != null && current != Object.class) {
+            allFields.addAll(Arrays.asList(current.getDeclaredFields()));
+            current = current.getSuperclass();
+          }
 
-    List<Field> allFields = new ArrayList<>();
-    Class<?> current = clazz;
-    while (current != null && current != Object.class) {
-      allFields.addAll(Arrays.asList(current.getDeclaredFields()));
-      current = current.getSuperclass();
-    }
-
-    Field[] filtered =
-        allFields.stream()
-            .filter(
-                field -> {
-                  for (Annotation ann : field.getAnnotations()) {
-                    String annType = ann.annotationType().getName();
-                    if (annType.equals("jakarta.persistence.Column")
-                        || annType.equals("javax.persistence.Column")) {
-                      return true;
+          return allFields.stream()
+              .filter(
+                  field -> {
+                    for (Annotation ann : field.getAnnotations()) {
+                      String annType = ann.annotationType().getName();
+                      if (annType.equals("jakarta.persistence.Column")
+                          || annType.equals("javax.persistence.Column")) {
+                        return true;
+                      }
                     }
-                  }
-                  return false;
-                })
-            .distinct()
-            .toArray(Field[]::new);
-
-    MybatisCommand.FIELD_CACHE.put(clazz, filtered);
-    return filtered;
+                    return false;
+                  })
+              .distinct()
+              .toArray(Field[]::new);
+        });
   }
 
   /**
@@ -108,6 +103,9 @@ public class MybatisEntityHelper {
    * CamelCase→snake_case 로 변환
    */
   protected String getColumnName(final Class<?> entityClass, final String fieldName) {
+    if (fieldName == null) {
+      throw new MybatisRepositoryException("fieldName cannot be null");
+    }
     try {
       Field field = findFieldInClassHierarchy(entityClass, fieldName);
       if (field != null) {
@@ -125,14 +123,14 @@ public class MybatisEntityHelper {
                 }
               }
             } catch (Exception e) {
-              // reflection 호출 중 예외 발생 시 무시하고 다음 어노테이션 검사
+              log.warn("Failed to get column name from annotation: {}", e.getMessage());
             }
             return stringHelper.getCamelCaseToSnakeCase(fieldName);
           }
         }
       }
-    } catch (Exception ignore) {
-      // 필드 또는 리플렉션 중 오류 난 경우 무시
+    } catch (Exception e) {
+      log.warn("Error while getting column name for field '{}': {}", fieldName, e.getMessage());
     }
     log.error("entity 에 포함되지 않는 필드 발견 : {}", fieldName);
     log.error(

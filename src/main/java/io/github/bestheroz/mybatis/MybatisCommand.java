@@ -167,18 +167,31 @@ public class MybatisCommand {
       throw new MybatisRepositoryException("entities empty for insertBatch");
     }
 
-    String tableName = entityHelper.getTableName(entities.get(0).getClass());
-    Set<String> columns = entityHelper.getEntityFields(entities.get(0).getClass());
+    // Check for null entities and type consistency
+    Class<?> expectedType = entities.get(0).getClass();
+    for (T entity : entities) {
+      if (entity == null) {
+        throw new MybatisRepositoryException("entity cannot be null in batch insert");
+      }
+      if (!entity.getClass().equals(expectedType)) {
+        throw new MybatisRepositoryException(
+            String.format(
+                "All entities must be of the same type. Expected: %s, Found: %s",
+                expectedType.getName(), entity.getClass().getName()));
+      }
+    }
+
+    String tableName = entityHelper.getTableName(expectedType);
+    Set<String> columns = entityHelper.getEntityFields(expectedType);
 
     // INSERT INTO table (col1, col2, …)
     String wrappedTable = stringHelper.wrapIdentifier(tableName);
     SQL sql = new SQL().INSERT_INTO(wrappedTable);
-    String columnsJoined =
+    sql.INTO_COLUMNS(
         columns.stream()
-            .map(v -> entityHelper.getColumnName(entities.get(0).getClass(), v))
+            .map(v -> entityHelper.getColumnName(expectedType, v))
             .map(stringHelper::wrapIdentifier)
-            .collect(Collectors.joining(", "));
-    sql.INTO_COLUMNS(columnsJoined);
+            .collect(Collectors.joining(", ")));
 
     // VALUES ( … ), ( … ), …
     List<List<String>> valuesList = new ArrayList<>();
