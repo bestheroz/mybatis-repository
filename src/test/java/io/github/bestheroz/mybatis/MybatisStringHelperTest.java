@@ -29,6 +29,19 @@ class MybatisStringHelperTest {
   }
 
   @Test
+  @DisplayName("SQL 인젝션 방지를 위한 종합적인 이스케이프 처리가 동작해야 한다")
+  void escapeSingleQuote_ShouldEscapeAllSpecialCharacters() {
+    // given
+    String input = "test'\\\"string\n\r\t\b\f\0\u001A";
+
+    // when
+    String result = helper.escapeSingleQuote(input);
+
+    // then
+    assertThat(result).isEqualTo("test''\\\\\\\"string\\n\\r\\t\\b\\f\\0\\Z");
+  }
+
+  @Test
   @DisplayName("두 문자열 사이의 문자열을 정상적으로 추출해야 한다")
   void substringBetween_ShouldExtractCorrectly() {
     // given
