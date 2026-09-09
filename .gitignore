@@ -42,4 +42,5 @@ build/
 gradle.properties
 .gradle/
 
-CLAUDE.md
+.claude
+.omc
