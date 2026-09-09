@@ -17,7 +17,7 @@ jobs:
     steps:
       # 1. 저장소 체크아웃
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@main
         with:
           fetch-depth: 0  # 태그 접근을 위해 전체 기록을 가져옴
 
@@ -74,7 +74,7 @@ jobs:
 
       # 8. build.gradle 변경 사항 커밋
       - name: Commit Changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@master
         with:
           commit_message: "⬆️Update version to ${{ env.VERSION }}"
           branch: main
