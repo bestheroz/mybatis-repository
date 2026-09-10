@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "mybatis-repository.timezone",
+      "type": "java.lang.String",
+      "description": "Zone ID used as the wall clock for datetime literals in generated SQL (for example Asia/Seoul). Defaults to UTC; java.util.Date and java.sql.Timestamp fall back to the JVM default zone while this is unset.",
+      "defaultValue": "UTC"
+    }
+  ]
+}
