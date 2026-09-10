@@ -19,6 +19,19 @@ public class MybatisCommand {
   protected static final Map<Class<?>, List<Field>> FIELD_CACHE = new ConcurrentHashMap<>();
   protected static final Map<Class<?>, String> TABLE_NAME_CACHE = new ConcurrentHashMap<>();
 
+  /** 엔티티의 @Column 필드 이름 집합. getEntityFields 가 질의마다 새 Set 을 만들지 않게 한다. */
+  protected static final Map<Class<?>, Set<String>> FIELD_NAME_CACHE = new ConcurrentHashMap<>();
+
+  /**
+   * (엔티티, 자바 필드명) → DB 컬럼명. 이 조회는 컬럼 하나마다 어노테이션 배열 사본과 리플렉션 Method 조회를 만들어 내는데, 결과는 JVM 이 사는 동안 바뀌지
+   * 않는다.
+   */
+  protected static final Map<Class<?>, Map<String, String>> COLUMN_NAME_CACHE =
+      new ConcurrentHashMap<>();
+
+  /** 매퍼 인터페이스 → 엔티티 클래스. 제네릭 인터페이스 탐색이 질의마다 다시 돌지 않게 한다. */
+  protected static final Map<Class<?>, Class<?>> MAPPER_ENTITY_CACHE = new ConcurrentHashMap<>();
+
   // ======================
   // Allowed Method List (기존과 동일)
   // ======================
@@ -57,6 +70,24 @@ public class MybatisCommand {
   private static final Set<String> EMPTY_SET = Collections.emptySet();
   private static final List<String> EMPTY_LIST = Collections.emptyList();
 
+  /**
+   * SQL 을 한 번만 문자열로 만들고, 디버그 로그가 켜져 있을 때만 개행을 지운 사본을 만든다.
+   *
+   * <p>{@code log.debug("{}", sql.toString().replaceAll(...))} 는 로그가 꺼져 있어도 인자를 먼저 계산한다. 즉 레벨과 무관하게
+   * SQL 전체 사본과 정규식 Pattern 이 매번 만들어졌다. 배치 인서트처럼 SQL 이 큰 경우 그대로 낭비다.
+   */
+  private static String renderAndLog(final SQL sql, final String label) {
+    final String rendered = sql.toString();
+    logSql(label, rendered);
+    return rendered;
+  }
+
+  private static void logSql(final String label, final String rendered) {
+    if (log.isDebugEnabled()) {
+      log.debug("{} SQL: {}", label, rendered.replace('\n', ' '));
+    }
+  }
+
   public MybatisCommand() {
     this.stringHelper = SHARED_STRING_HELPER;
     this.entityHelper = SHARED_ENTITY_HELPER;
@@ -85,8 +116,7 @@ public class MybatisCommand {
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(tableName);
     clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    log.debug("count SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    return renderAndLog(sql, "count");
   }
 
   // ===========================================
@@ -136,8 +166,7 @@ public class MybatisCommand {
       sql.OFFSET(offset);
     }
 
-    log.debug("select SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    return renderAndLog(sql, "select");
   }
 
   // ===========================================
@@ -159,8 +188,7 @@ public class MybatisCommand {
           clauseBuilder.formatValueForSQL(entry.getValue()));
     }
 
-    log.debug("insert SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    return renderAndLog(sql, "insert");
   }
 
   // ===========================================
@@ -198,23 +226,30 @@ public class MybatisCommand {
             .collect(Collectors.joining(", ")));
 
     // VALUES ( … ), ( … ), …
-    List<List<String>> valuesList = new ArrayList<>();
+    // 행마다 List 를 만들어 모아 두었다가 다시 잇지 않고 곧바로 이어 붙인다.
+    // 1000행 x 20컬럼 배치라면 리스트 1000개와 중간 문자열 2만 개가 통째로 사라진다.
+    final StringBuilder values = new StringBuilder(entities.size() * columns.size() * 16);
+    boolean firstRow = true;
     for (T entity : entities) {
       Map<String, Object> entityMap = toMap(entity);
-      List<String> rowValues = new ArrayList<>();
-      for (String fieldName : columns) {
-        rowValues.add(clauseBuilder.formatValueForSQL(entityMap.get(fieldName)));
+      if (!firstRow) {
+        values.append(", ");
       }
-      valuesList.add(rowValues);
+      firstRow = false;
+      values.append('(');
+      boolean firstColumn = true;
+      for (String fieldName : columns) {
+        if (!firstColumn) {
+          values.append(", ");
+        }
+        firstColumn = false;
+        values.append(clauseBuilder.formatValueForSQL(entityMap.get(fieldName)));
+      }
+      values.append(')');
     }
-    String valuesJoined =
-        valuesList.stream()
-            .map(row -> "(" + String.join(", ", row) + ")")
-            .collect(Collectors.joining(", "));
-    sql.INTO_VALUES(valuesJoined);
+    sql.INTO_VALUES(values.toString());
 
-    log.debug("insertBatch SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    return renderAndLog(sql, "insertBatch");
   }
 
   // ===========================================
@@ -240,10 +275,12 @@ public class MybatisCommand {
       sql.SET(clauseBuilder.buildEqualClause(columnName, entry.getValue()));
     }
     clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    clauseBuilder.ensureWhereClause(sql);
 
-    log.debug("update SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    // WHERE 없는 UPDATE 를 로그에 완성된 문장으로 먼저 흘리지 않도록 가드를 통과한 뒤에 찍는다.
+    final String rendered = sql.toString();
+    clauseBuilder.ensureWhereClause(rendered);
+    logSql("update", rendered);
+    return rendered;
   }
 
   // ===========================================
@@ -262,10 +299,12 @@ public class MybatisCommand {
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().DELETE_FROM(tableName);
     clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    clauseBuilder.ensureWhereClause(sql);
 
-    log.debug("delete SQL: {}", sql.toString().replaceAll("\n", " "));
-    return sql.toString();
+    // WHERE 없는 DELETE 를 로그에 완성된 문장으로 먼저 흘리지 않도록 가드를 통과한 뒤에 찍는다.
+    final String rendered = sql.toString();
+    clauseBuilder.ensureWhereClause(rendered);
+    logSql("delete", rendered);
+    return rendered;
   }
 
   // ===========================================
@@ -277,17 +316,18 @@ public class MybatisCommand {
       throw new MybatisRepositoryException("Source object cannot be null");
     }
 
-    Map<String, Object> map = new HashMap<>();
     List<Field> fields = MybatisEntityHelper.getAllNonExcludedFields(source.getClass());
+    // 크기를 미리 지정하면 안 된다. buildInsertSQL 이 이 맵의 entrySet 을 그대로 순회하므로
+    // 버킷 순서가 곧 INSERT 컬럼 순서다. 용량이 달라지면 컬럼 순서가 바뀐다(@Column 3, 4, 5, 12, 24개 등에서 확인).
+    // 리해시 한 번을 아끼자고 생성되는 SQL 을 바꿀 이유는 없다.
+    Map<String, Object> map = new HashMap<>();
 
     for (Field field : fields) {
       try {
-        // Thread-safe field access
-        synchronized (field) {
-          field.setAccessible(true);
-          Object val = field.get(source);
-          map.put(field.getName(), val);
-        }
+        // setAccessible 은 캐시에 담을 때 이미 끝냈고 Field#get 은 Field 를 건드리지 않는다.
+        // 여기서 잠그면 캐시가 공유하는 Field 하나를 두고 모든 스레드가 줄을 서게 된다(배치 인서트에서 특히).
+        Object val = field.get(source);
+        map.put(field.getName(), val);
       } catch (Exception e) {
         log.warn("Failed to get field value for {}: {}", field.getName(), e.getMessage());
         log.debug("Stack trace: ", e);

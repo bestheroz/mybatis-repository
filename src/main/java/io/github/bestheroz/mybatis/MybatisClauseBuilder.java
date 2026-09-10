@@ -16,6 +16,7 @@ public class MybatisClauseBuilder {
   // 상수 정의
   private static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
   private static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
+  private static final String DEFAULT_TIME_FORMAT = "HH:mm:ss";
 
   // 설정 가능한 값들을 위한 Properties 참조
   private final MybatisRepositoryProperties properties;
@@ -25,6 +26,8 @@ public class MybatisClauseBuilder {
       DateTimeFormatter.ofPattern(DEFAULT_DATETIME_FORMAT);
   private static final DateTimeFormatter DATE_FORMATTER =
       DateTimeFormatter.ofPattern(DEFAULT_DATE_FORMAT);
+  private static final DateTimeFormatter TIME_FORMATTER =
+      DateTimeFormatter.ofPattern(DEFAULT_TIME_FORMAT);
 
   private final MybatisStringHelper stringHelper;
   private final MybatisEntityHelper entityHelper;
@@ -157,11 +160,29 @@ public class MybatisClauseBuilder {
 
   /** WHERE 절 존재 여부 확인 (UPDATE, DELETE 시 강제 사용) */
   protected void ensureWhereClause(final SQL sql) {
-    // 간단한 방법: toString().toLowerCase().contains("where ")
-    if (!sql.toString().toLowerCase().contains("where ")) {
+    ensureWhereClause(sql.toString());
+  }
+
+  /**
+   * 이미 문자열로 만들어 둔 SQL 을 그대로 검사한다.
+   *
+   * <p>예전에는 SQL 을 한 번 더 만들고 {@code toLowerCase()} 로 전체 사본을 또 떴다. 큰 UPDATE 문에서는 그 두 벌이 그대로 낭비다.
+   */
+  protected void ensureWhereClause(final String renderedSql) {
+    if (!containsIgnoreCase(renderedSql, "where ")) {
       log.warn("whereConditions are empty");
       throw new MybatisRepositoryException("whereConditions are required");
     }
+  }
+
+  private static boolean containsIgnoreCase(final String haystack, final String needle) {
+    final int last = haystack.length() - needle.length();
+    for (int i = 0; i <= last; i++) {
+      if (haystack.regionMatches(true, i, needle, 0, needle.length())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ===========================================
@@ -192,13 +213,23 @@ public class MybatisClauseBuilder {
               + inValues.size());
     }
 
-    String inFormatted =
-        inValues.stream().map(this::formatValueForSQL).collect(Collectors.joining(", "));
-    return String.format("`%s` %s IN (%s)", dbColumnName, (isNotIn ? "NOT" : ""), inFormatted);
+    // String.format 은 포맷 문자열을 매번 파싱하고 Formatter 를 새로 만든다. 조건 하나마다 거치는 자리다.
+    // (isNotIn 이 false 일 때 공백이 둘인 것은 기존 출력 그대로 유지한 것이다.)
+    final StringBuilder sb = new StringBuilder(dbColumnName.length() + inValues.size() * 8 + 16);
+    sb.append('`').append(dbColumnName).append("` ").append(isNotIn ? "NOT" : "").append(" IN (");
+    boolean first = true;
+    for (Object inValue : inValues) {
+      if (!first) {
+        sb.append(", ");
+      }
+      first = false;
+      sb.append(formatValueForSQL(inValue));
+    }
+    return sb.append(')').toString();
   }
 
   protected String buildEqualClause(final String dbColumnName, final Object value) {
-    return String.format("`%s` = %s", dbColumnName, formatValueForSQL(value));
+    return "`" + dbColumnName + "` = " + formatValueForSQL(value);
   }
 
   // ===========================================
@@ -213,6 +244,17 @@ public class MybatisClauseBuilder {
       return formatStringValue((String) value);
     } else if (value instanceof Instant) {
       return "'" + stringHelper.instantToString((Instant) value, DEFAULT_DATETIME_FORMAT) + "'";
+    } else if (value instanceof java.sql.Date) {
+      // JDBC 의 "날짜만" 타입. java.util.Date 의 하위 타입이지만 toInstant() 가
+      // UnsupportedOperationException 을 던지므로 아래 Date 분기보다 먼저 걸러야 한다.
+      // toLocalDate() 는 mybatis-repository.timezone 이 아니라 JVM 기본 타임존으로 읽는데, 이건 의도한
+      // 것이다 -- 이 타입의 값은 드라이버나 Date.valueOf(LocalDate) 가 이미 JVM 기본 타임존 자정으로
+      // 정규화해 넣은 것이라, 다른 타임존으로 다시 해석하면 날짜가 하루씩 밀린다.
+      return "'" + ((java.sql.Date) value).toLocalDate().format(DATE_FORMATTER) + "'";
+    } else if (value instanceof java.sql.Time) {
+      // JDBC 의 "시각만" 타입. 위와 같은 이유로 먼저 거르고, 같은 이유로 JVM 기본 타임존으로 읽는다.
+      // 이 타입에는 초 미만이 없어 HH:mm:ss 로 충분하다.
+      return "'" + ((java.sql.Time) value).toLocalTime().format(TIME_FORMATTER) + "'";
     } else if (value instanceof Date) {
       return "'"
           + ((Date) value).toInstant().atZone(properties.getDateZoneId()).format(DATETIME_FORMATTER)
@@ -226,6 +268,19 @@ public class MybatisClauseBuilder {
           + stringHelper.instantToString(
               ((OffsetDateTime) value).toInstant(), DEFAULT_DATETIME_FORMAT)
           + "'";
+    } else if (value instanceof ZonedDateTime) {
+      // 없으면 toString() 으로 떨어져 '2025-01-02T12:34:56+09:00[Asia/Seoul]' 이 그대로 SQL 에 들어간다.
+      return "'"
+          + stringHelper.instantToString(
+              ((ZonedDateTime) value).toInstant(), DEFAULT_DATETIME_FORMAT)
+          + "'";
+    } else if (value instanceof OffsetTime) {
+      // 없으면 toString() 으로 떨어져 '12:34:56+09:00' 이 그대로 들어간다. 날짜가 없으면 어느 날의
+      // 오프셋인지 알 수 없어 옮길 기준이 없으므로, 오프셋만 떼고 벽시계를 찍는다.
+      return "'" + ((OffsetTime) value).toLocalTime().format(TIME_FORMATTER) + "'";
+    } else if (value instanceof LocalTime) {
+      // toString() 은 초가 0 이면 'HH:mm' 으로 줄여 버린다. 자리수를 고정한다.
+      return "'" + ((LocalTime) value).format(TIME_FORMATTER) + "'";
     } else if (value instanceof Enum) {
       return formatEnumValue((Enum<?>) value);
     } else if (value instanceof Collection) {
@@ -251,9 +306,11 @@ public class MybatisClauseBuilder {
   private String formatStringValue(final String str) {
     // ISO8601이면 Instant로 변환
     if (stringHelper.isISO8601String(str)) {
-      return "'"
-          + stringHelper.instantToString(Instant.parse(str), "yyyy-MM-dd HH:mm:ss.SSS")
-          + "'";
+      final Instant instant = stringHelper.parseIso8601(str);
+      if (instant != null) {
+        return "'" + stringHelper.instantToString(instant, DEFAULT_DATETIME_FORMAT) + "'";
+      }
+      // 모양만 닮았을 뿐 시각이 아니면 예외로 질의를 깨뜨리지 않고 평범한 문자열로 떨어뜨린다
     }
     // 일반 문자열
     return "'" + stringHelper.escapeSingleQuote(str) + "'";
@@ -262,17 +319,18 @@ public class MybatisClauseBuilder {
   private String formatEnumValue(final Enum<?> enumValue) {
     if (enumValue instanceof ValueEnum) {
       ValueEnum ve = (ValueEnum) enumValue;
-      return "'" + ve.getValue() + "'";
+      // getValue() 는 구현하는 쪽이 정하는 임의의 문자열이라 다른 값과 똑같이 이스케이프를 거쳐야 한다.
+      return "'" + stringHelper.escapeSingleQuote(ve.getValue()) + "'";
     }
-    // 기본 name()
-    return "'" + enumValue.name() + "'";
+    // 기본 name() (자바 식별자라 바뀔 문자는 없지만 경로를 하나로 맞춘다)
+    return "'" + stringHelper.escapeSingleQuote(enumValue.name()) + "'";
   }
 
   private String formatCollectionValue(final Collection<?> collection) {
     // 예: '[val1, val2, val3]' 형태
     String joined =
         collection.stream()
-            .map(v -> formatValueForSQL(v).replace("'", "\""))
+            .map(v -> formatValueForSQL(v).replace('\'', '"'))
             .collect(Collectors.joining(", "));
     return "'[" + joined + "]'";
   }

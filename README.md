@@ -179,7 +179,9 @@ mybatis-repository:
   timezone: Asia/Seoul   # 생략하면 UTC
 ```
 
-지정하면 `Instant`, `OffsetDateTime`, ISO8601 문자열, `Date`/`Timestamp` 가 모두 같은 벽시계를 씁니다. 지정하지 않았을 때의 기본값은 타입마다 예전 그대로입니다 -- `Instant` 계열은 `UTC`, `Date`/`Timestamp` 는 JVM 기본 타임존입니다. (`LocalDateTime`/`LocalDate` 는 애초에 벽시계 값이라 이 설정과 무관합니다.)
+지정하면 `Instant`, `OffsetDateTime`, `ZonedDateTime`, ISO8601 문자열, `Date`/`Timestamp` 가 모두 같은 벽시계를 씁니다. 지정하지 않았을 때의 기본값은 타입마다 예전 그대로입니다 -- `Instant` 계열은 `UTC`, `Date`/`Timestamp` 는 JVM 기본 타임존입니다.
+
+이 설정을 따르지 않는 타입도 있습니다. `LocalDateTime`/`LocalDate`/`LocalTime` 은 애초에 벽시계 값이고, `OffsetTime` 은 날짜가 없어 옮길 기준이 없으므로 오프셋만 떼고 찍습니다. JDBC 의 `java.sql.Date`/`java.sql.Time` 은 드라이버나 `valueOf` 가 이미 JVM 기본 타임존으로 정규화해 넣은 값이라 그대로 JVM 기본 타임존으로 읽습니다 -- 여기서 이 설정을 따르면 날짜가 하루씩 밀립니다.
 
 > `@SpringBootTest` 에서는 그대로 동작하지만, `ApplicationContextRunner` 는 `spring.factories` 의 초기화기를 로드하지 않아 이 설정이 적용되지 않습니다. 러너로 검증하려면 `withInitializer(new MybatisTimezoneInitializer())` 를 직접 등록하세요.
 

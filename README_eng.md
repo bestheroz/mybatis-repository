@@ -179,7 +179,9 @@ mybatis-repository:
   timezone: Asia/Seoul   # defaults to UTC when omitted
 ```
 
-Set it and `Instant`, `OffsetDateTime`, ISO8601 strings and `Date`/`Timestamp` all share one wall clock. Leave it unset and each type keeps the default it has always had — `UTC` for the `Instant` family, the JVM default zone for `Date`/`Timestamp`. (`LocalDateTime`/`LocalDate` are wall-clock values already and are unaffected either way.)
+Set it and `Instant`, `OffsetDateTime`, `ZonedDateTime`, ISO8601 strings and `Date`/`Timestamp` all share one wall clock. Leave it unset and each type keeps the default it has always had — `UTC` for the `Instant` family, the JVM default zone for `Date`/`Timestamp`.
+
+Some types deliberately do not follow the setting. `LocalDateTime`/`LocalDate`/`LocalTime` are wall-clock values already, and `OffsetTime` has no date to anchor a conversion, so its offset is dropped. JDBC's `java.sql.Date`/`java.sql.Time` are read with the JVM default zone, because the driver or `valueOf` already normalized them to it — following the setting there would shift the date by a day.
 
 > `@SpringBootTest` picks this up, but `ApplicationContextRunner` does not load `spring.factories` initializers, so the setting is ignored there. Register `withInitializer(new MybatisTimezoneInitializer())` explicitly in runner-style tests.
 

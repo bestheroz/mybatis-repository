@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,14 @@ import org.slf4j.LoggerFactory;
 public class MybatisEntityHelper {
   private static final Logger log = LoggerFactory.getLogger(MybatisEntityHelper.class);
   private final MybatisStringHelper stringHelper;
+
+  /**
+   * 소비자가 {@link MybatisStringHelper} 를 직접 만들지 않아도 되게 하는 편의 생성자. 이 클래스만 필요한 쪽(예: 매퍼에서 엔티티 타입을 뽑는
+   * {@link #extractEntityClassFromMapper}) 이 SQL 이스케이프 헬퍼까지 알아야 할 이유는 없다.
+   */
+  public MybatisEntityHelper() {
+    this(new MybatisStringHelper());
+  }
 
   public MybatisEntityHelper(MybatisStringHelper stringHelper) {
     this.stringHelper = stringHelper;
@@ -57,11 +66,19 @@ public class MybatisEntityHelper {
         });
   }
 
-  /** 엔티티 클래스에 붙은 모든 @Column 어노테이션 필드명(자바 필드 이름) 집합을 반환. */
+  /**
+   * 엔티티 클래스에 붙은 모든 @Column 어노테이션 필드명(자바 필드 이름) 집합을 반환.
+   *
+   * <p>필드 목록 자체는 이미 캐시되어 있었지만 이름 집합은 부를 때마다 새로 만들고 있었다. 전체 컬럼 SELECT 와 배치 인서트가 질의마다 거치는 자리다.
+   */
   protected Set<String> getEntityFields(final Class<?> entityClass) {
-    return getAllNonExcludedFields(entityClass).stream()
-        .map(Field::getName)
-        .collect(Collectors.toSet());
+    return MybatisCommand.FIELD_NAME_CACHE.computeIfAbsent(
+        entityClass,
+        clazz ->
+            Collections.unmodifiableSet(
+                getAllNonExcludedFields(clazz).stream()
+                    .map(Field::getName)
+                    .collect(Collectors.toSet())));
   }
 
   /**
@@ -96,6 +113,16 @@ public class MybatisEntityHelper {
                   .distinct()
                   .collect(Collectors.toList());
 
+          // setAccessible 은 여기서 한 번만 해 둔다. 읽을 때마다 다시 부르면서 Field 를 잠글 이유가 없다.
+          // 실패하면(SecurityManager 등) 그대로 두고, 값을 읽는 쪽이 예외를 잡아 그 필드만 건너뛴다.
+          for (Field field : filteredFields) {
+            try {
+              field.setAccessible(true);
+            } catch (Exception e) {
+              log.debug("Failed to make field accessible {}: {}", field.getName(), e.getMessage());
+            }
+          }
+
           // 불변 리스트로 만들어 thread safety 보장
           return Collections.unmodifiableList(filteredFields);
         });
@@ -109,6 +136,23 @@ public class MybatisEntityHelper {
     if (fieldName == null) {
       throw new MybatisRepositoryException("fieldName cannot be null");
     }
+    if (entityClass == null) {
+      return resolveColumnName(null, fieldName);
+    }
+    final Map<String, String> byFieldName =
+        MybatisCommand.COLUMN_NAME_CACHE.computeIfAbsent(
+            entityClass, clazz -> new ConcurrentHashMap<>());
+    final String cached = byFieldName.get(fieldName);
+    if (cached != null) {
+      return cached;
+    }
+    // 못 찾는 이름은 예외로 끝나는 오류 경로라 캐시하지 않는다. 성공한 것만 담는다.
+    final String resolved = resolveColumnName(entityClass, fieldName);
+    byFieldName.put(fieldName, resolved);
+    return resolved;
+  }
+
+  private String resolveColumnName(final Class<?> entityClass, final String fieldName) {
     try {
       Field field = findFieldInClassHierarchy(entityClass, fieldName);
       if (field != null) {
@@ -167,6 +211,22 @@ public class MybatisEntityHelper {
    */
   @SuppressWarnings("unchecked")
   public <E> Class<E> extractEntityClassFromMapper(Class<?> mapperInterface) {
+    // 프로바이더 메소드가 불릴 때마다, 즉 질의마다 도는 자리다. getGenericInterfaces() 는 부를 때마다 배열 사본을
+    // 새로 만들고 부모 인터페이스까지 재귀로 훑는데, 매퍼와 엔티티의 짝은 끝까지 바뀌지 않는다.
+    final Class<?> cached = MybatisCommand.MAPPER_ENTITY_CACHE.get(mapperInterface);
+    if (cached != null) {
+      return (Class<E>) cached;
+    }
+    final Class<E> resolved = resolveEntityClassFromMapper(mapperInterface);
+    if (resolved != null) {
+      // 못 찾으면 호출부가 예외로 끝내므로 성공한 것만 담는다(ConcurrentHashMap 은 null 을 담지도 못한다).
+      MybatisCommand.MAPPER_ENTITY_CACHE.put(mapperInterface, resolved);
+    }
+    return resolved;
+  }
+
+  @SuppressWarnings("unchecked")
+  private <E> Class<E> resolveEntityClassFromMapper(Class<?> mapperInterface) {
     Type[] genericIfs = mapperInterface.getGenericInterfaces();
     for (Type t : genericIfs) {
       if (t instanceof ParameterizedType) {

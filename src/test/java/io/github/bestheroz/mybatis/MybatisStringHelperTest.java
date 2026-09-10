@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -284,5 +286,141 @@ class MybatisStringHelperTest {
 
     // then
     assertThat(result).contains("RuntimeException").contains("Test Exception");
+  }
+
+  @Test
+  @DisplayName("음수 오프셋이 붙은 ISO8601 문자열도 판별해야 한다")
+  void isISO8601String_ShouldAcceptNegativeOffset() {
+    // given: 날짜의 하이픈 2개에 오프셋 하이픈이 하나 더 붙는다
+
+    // when & then
+    assertThat(helper.isISO8601String("2025-01-02T12:34:56-05:00")).isTrue();
+    assertThat(helper.isISO8601String("2025-01-02T12:34:56-0500")).isTrue();
+  }
+
+  @Test
+  @DisplayName("오프셋 표기가 달라도 같은 Instant 로 파싱해야 한다")
+  void parseIso8601_ShouldAcceptEveryDetectedOffsetForm() {
+    // given
+    Instant expected = Instant.parse("2025-01-02T03:34:56Z");
+
+    // when & then
+    assertThat(helper.parseIso8601("2025-01-02T03:34:56Z")).isEqualTo(expected);
+    assertThat(helper.parseIso8601("2025-01-02T12:34:56+09:00")).isEqualTo(expected);
+    assertThat(helper.parseIso8601("2025-01-02T12:34:56+0900")).isEqualTo(expected);
+    assertThat(helper.parseIso8601("2025-01-01T22:34:56-05:00")).isEqualTo(expected);
+    assertThat(helper.parseIso8601("2025-01-01T22:34:56-0500")).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName("윤초가 붙은 값도 예외 없이 파싱해야 한다")
+  void parseIso8601_ShouldAcceptLeapSecond() {
+    // given: ISO_OFFSET_DATE_TIME 의 STRICT 해석은 60 초를 거절하고 ISO_INSTANT 만 받아 준다
+
+    // when & then
+    assertThat(helper.parseIso8601("2016-12-31T23:59:60Z"))
+        .isEqualTo(Instant.parse("2016-12-31T23:59:59Z"));
+  }
+
+  @Test
+  @DisplayName("파싱할 수 없는 값은 예외 대신 null 이어야 한다")
+  void parseIso8601_ShouldReturnNullWhenNotATime() {
+    // when & then
+    assertThat(helper.parseIso8601("2025-01-02T12:34:56+99:99")).isNull();
+    assertThat(helper.parseIso8601("not a time")).isNull();
+    assertThat(helper.parseIso8601(null)).isNull();
+  }
+
+  /** 리팩터링 전의 구현. 한 번 훑는 방식이 이것과 글자 하나까지 같은 결과를 내는지 비교하는 기준으로만 쓴다. */
+  private static String escapeByChainedReplace(final String src) {
+    return src.replace("'", "''")
+        .replace("\\", "\\\\")
+        .replace("\0", "\\0")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\"", "\\\"")
+        .replace("\u001A", "\\Z");
+  }
+
+  @Test
+  @DisplayName("한 번 훑는 이스케이프가 기존 치환 연쇄와 완전히 같은 결과를 내야 한다")
+  void escapeSingleQuote_ShouldMatchPreviousImplementation() {
+    // given
+    // 이스케이프는 SQL 인젝션을 막는 관문이므로, 성능을 이유로 바꾼 구현이
+    // 어떤 입력에서도 예전과 다른 문자열을 내놓지 않는다는 것을 보여야 한다.
+    final char[] interesting = {
+      '\'', '\\', '\0', '\n', '\r', '\t', '\b', '\f', '"', '\u001A', 'a', '0', ' ', '가', '%', '`'
+    };
+    final List<String> corpus = new ArrayList<>();
+    corpus.add("");
+    corpus.add("평범한 값");
+    corpus.add("O'Brien");
+    corpus.add("C:\\path\\to");
+    corpus.add("\\'");
+    corpus.add("'\\");
+    corpus.add("\\\n");
+    corpus.add("\n\\");
+    for (char first : interesting) {
+      corpus.add(String.valueOf(first));
+      for (char second : interesting) {
+        corpus.add(new String(new char[] {first, second}));
+        for (char third : interesting) {
+          corpus.add(new String(new char[] {first, second, third}));
+        }
+      }
+    }
+
+    // when / then
+    for (String input : corpus) {
+      assertThat(helper.escapeSingleQuote(input))
+          .as("입력: %s", java.util.Arrays.toString(input.toCharArray()))
+          .isEqualTo(escapeByChainedReplace(input));
+    }
+  }
+
+  @Test
+  @DisplayName("이스케이프할 문자가 없으면 원본 인스턴스를 그대로 돌려주어야 한다")
+  void escapeSingleQuote_ShouldReturnSameInstanceWhenNothingToEscape() {
+    // given
+    String clean = "plain_value_123 가나다";
+
+    // when
+    String result = helper.escapeSingleQuote(clean);
+
+    // then
+    assertThat(result).isSameAs(clean);
+  }
+
+  @Test
+  @DisplayName("식별자 검증은 허용 문자와 SQL 키워드 규칙을 그대로 지켜야 한다")
+  void wrapIdentifier_ShouldKeepValidationRules() {
+    // given / when / then
+    assertThat(helper.wrapIdentifier("user_id")).isEqualTo("`user_id`");
+    assertThat(helper.wrapIdentifier("a1")).isEqualTo("`a1`");
+
+    // 알파벳으로 시작하지 않거나 허용되지 않는 문자가 섞이면 거부
+    assertThatThrownBy(() -> helper.wrapIdentifier("1abc"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("_abc"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("a-b"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("a b"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("a`b"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("가나다"))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    // SQL 키워드는 대소문자를 가리지 않고 차단
+    assertThatThrownBy(() -> helper.wrapIdentifier("SELECT"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("select"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> helper.wrapIdentifier("SeLeCt"))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }
