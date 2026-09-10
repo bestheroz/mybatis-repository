@@ -5,7 +5,6 @@ import io.github.bestheroz.mybatis.type.ValueEnum;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,14 +53,15 @@ public class MybatisClauseBuilder {
    * @param whereConditions 키: 필드명(:조건타입), 값: 필터 값
    * @param entityClass 엔티티 클래스 (예: User.class)
    */
-  protected void buildWhereClause(
+  protected int buildWhereClause(
       final SQL sql, final Map<String, Object> whereConditions, final Class<?> entityClass) {
     if (whereConditions == null) {
-      return;
+      return 0;
     }
 
     Map<String, Object> extractedWhereConditions = extractWhereConditions(whereConditions);
 
+    int appended = 0;
     for (Map.Entry<String, Object> entry : extractedWhereConditions.entrySet()) {
       final String key = entry.getKey();
       final Object value = entry.getValue();
@@ -69,16 +69,18 @@ public class MybatisClauseBuilder {
       // key를 ":" 기준으로 앞뒤로 잘라서 column/conditionType 구분
       String columnName = stringHelper.substringBefore(key);
       String conditionType = stringHelper.substringAfter(key);
-      if (conditionType.isEmpty()) {
-        conditionType = "eq"; // 기본 eq
-      }
+      // 접미사 없는 키가 대부분이다. "eq" 를 넣고 다시 찾으면 조건마다 조회표를 한 번 뒤지게 된다.
+      final Condition condition =
+          conditionType.isEmpty() ? Condition.EQ : Condition.from(conditionType);
 
       // DB Column (entityClass를 함께 넘김)
       String dbColumnName = entityHelper.getColumnName(entityClass, columnName);
 
       // Condition 선택 후 빌드
-      sql.WHERE(Condition.from(conditionType).buildClause(dbColumnName, value, this));
+      sql.WHERE(condition.buildClause(dbColumnName, value, this));
+      appended++;
     }
+    return appended;
   }
 
   private Map<String, Object> extractWhereConditions(Map<String, Object> params) {
@@ -107,8 +109,7 @@ public class MybatisClauseBuilder {
     if ((distinctColumns == null || distinctColumns.isEmpty())
         && (targetColumns == null || targetColumns.isEmpty())) {
       for (String field : entityHelper.getEntityFields(entityClass)) {
-        String colName = entityHelper.getColumnName(entityClass, field);
-        sql.SELECT(stringHelper.wrapIdentifier(colName));
+        sql.SELECT(entityHelper.getWrappedColumnName(entityClass, field));
       }
       return;
     }
@@ -116,8 +117,7 @@ public class MybatisClauseBuilder {
     // DISTINCT 컬럼
     if (distinctColumns != null) {
       for (String distinctCol : distinctColumns) {
-        sql.SELECT_DISTINCT(
-            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, distinctCol)));
+        sql.SELECT_DISTINCT(entityHelper.getWrappedColumnName(entityClass, distinctCol));
       }
     }
 
@@ -125,8 +125,7 @@ public class MybatisClauseBuilder {
     if (targetColumns != null) {
       for (String targetCol : targetColumns) {
         if (distinctColumns == null || !distinctColumns.contains(targetCol)) {
-          sql.SELECT(
-              stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, targetCol)));
+          sql.SELECT(entityHelper.getWrappedColumnName(entityClass, targetCol));
         }
       }
     }
@@ -147,42 +146,26 @@ public class MybatisClauseBuilder {
     for (String condition : orderByConditions) {
       if (condition.startsWith("-")) {
         String realCol = condition.substring(1);
-        sql.ORDER_BY(
-            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, realCol))
-                + " DESC");
+        sql.ORDER_BY(entityHelper.getWrappedColumnName(entityClass, realCol) + " DESC");
       } else {
-        sql.ORDER_BY(
-            stringHelper.wrapIdentifier(entityHelper.getColumnName(entityClass, condition))
-                + " ASC");
+        sql.ORDER_BY(entityHelper.getWrappedColumnName(entityClass, condition) + " ASC");
       }
     }
-  }
-
-  /** WHERE 절 존재 여부 확인 (UPDATE, DELETE 시 강제 사용) */
-  protected void ensureWhereClause(final SQL sql) {
-    ensureWhereClause(sql.toString());
   }
 
   /**
-   * 이미 문자열로 만들어 둔 SQL 을 그대로 검사한다.
+   * WHERE 절 존재 여부 확인 (UPDATE, DELETE 시 강제 사용).
    *
-   * <p>예전에는 SQL 을 한 번 더 만들고 {@code toLowerCase()} 로 전체 사본을 또 떴다. 큰 UPDATE 문에서는 그 두 벌이 그대로 낭비다.
+   * <p>{@link #buildWhereClause} 가 실제로 붙인 조건 개수로 판정한다. 예전에는 완성된 SQL 문자열에서 {@code "where "} 를 찾았는데,
+   * 그러면 WHERE 절이 아니라 SET 절의 값 리터럴에도 걸린다 -- {@code SET `memo` = 'delivered somewhere else'} 한 줄이면
+   * WHERE 없는 UPDATE 가 이 가드를 그대로 통과해 전 행을 갱신했다. 앞단의 {@code whereConditions.isEmpty()} 검사는 중첩 {@code
+   * whereConditions} 키가 빈 맵일 때 바깥 맵 크기가 1이라 지나가므로, 이 가드가 마지막 안전망이다.
    */
-  protected void ensureWhereClause(final String renderedSql) {
-    if (!containsIgnoreCase(renderedSql, "where ")) {
+  protected void ensureWhereClause(final int appendedConditionCount) {
+    if (appendedConditionCount <= 0) {
       log.warn("whereConditions are empty");
       throw new MybatisRepositoryException("whereConditions are required");
     }
-  }
-
-  private static boolean containsIgnoreCase(final String haystack, final String needle) {
-    final int last = haystack.length() - needle.length();
-    for (int i = 0; i <= last; i++) {
-      if (haystack.regionMatches(true, i, needle, 0, needle.length())) {
-        return true;
-      }
-    }
-    return false;
   }
 
   // ===========================================
@@ -242,6 +225,11 @@ public class MybatisClauseBuilder {
 
     if (value instanceof String) {
       return formatStringValue((String) value);
+    } else if (value instanceof Number || value instanceof Boolean) {
+      // 숫자와 Boolean은 안전하게 처리.
+      // ID 같은 숫자는 문자열 다음으로 흔한데 예전에는 아래 시각/열거형 분기를 모두 지나서야 닿았다.
+      // 아래 분기의 타입들(시각, Enum, Collection, Map)은 Number/Boolean 이 될 수 없어 결과는 같다.
+      return value.toString();
     } else if (value instanceof Instant) {
       return "'" + stringHelper.instantToString((Instant) value, DEFAULT_DATETIME_FORMAT) + "'";
     } else if (value instanceof java.sql.Date) {
@@ -287,23 +275,30 @@ public class MybatisClauseBuilder {
       return formatCollectionValue((Collection<?>) value);
     } else if (value instanceof Map) {
       return formatMapValue((Map<?, ?>) value);
-    } else if (value instanceof Number || value instanceof Boolean) {
-      // 숫자와 Boolean은 안전하게 처리
-      return value.toString();
     }
+
     // 기타 객체는 문자열로 변환 후 이스케이프
     String stringValue = value.toString();
-    if (stringValue.length() > properties.getMaxStringValueLength()) {
-      throw new MybatisRepositoryException(
-          "Value too long for SQL: "
-              + stringValue.length()
-              + ", max allowed: "
-              + properties.getMaxStringValueLength());
-    }
+    ensureValueLength(stringValue.length());
     return "'" + stringHelper.escapeSingleQuote(stringValue) + "'";
   }
 
+  /**
+   * SQL 리터럴 하나의 길이 상한을 확인한다.
+   *
+   * <p>예전에는 마지막 "기타 객체" 분기에만 있어서, 가장 흔한 {@code String} 은 검사를 통째로 건너뛰었다. 같은 길이의 {@code
+   * StringBuilder} 는 걸리고 {@code String} 은 통과하는 상태였다.
+   */
+  private void ensureValueLength(final int length) {
+    final int max = properties.getMaxStringValueLength();
+    if (length > max) {
+      throw new MybatisRepositoryException(
+          "Value too long for SQL: " + length + ", max allowed: " + max);
+    }
+  }
+
   private String formatStringValue(final String str) {
+    ensureValueLength(str.length());
     // ISO8601이면 Instant로 변환
     if (stringHelper.isISO8601String(str)) {
       final Instant instant = stringHelper.parseIso8601(str);
@@ -328,16 +323,27 @@ public class MybatisClauseBuilder {
 
   private String formatCollectionValue(final Collection<?> collection) {
     // 예: '[val1, val2, val3]' 형태
-    String joined =
-        collection.stream()
-            .map(v -> formatValueForSQL(v).replace('\'', '"'))
-            .collect(Collectors.joining(", "));
-    return "'[" + joined + "]'";
+    // 스트림 파이프라인과 joining 이 만들던 중간 문자열을 없애고 한 번에 이어 붙인다.
+    // 곱을 int 로 계산하면 원소가 아주 많을 때 음수로 뒤집혀 NegativeArraySizeException 이 난다.
+    // 초기 크기 힌트일 뿐이므로 long 으로 계산해 상한에서 자른다(배치 인서트와 같은 방식).
+    final StringBuilder sb =
+        new StringBuilder((int) Math.min((long) collection.size() * 12L + 4L, 1L << 20));
+    sb.append("'[");
+    boolean first = true;
+    for (Object element : collection) {
+      if (!first) {
+        sb.append(", ");
+      }
+      first = false;
+      sb.append(formatValueForSQL(element).replace('\'', '"'));
+    }
+    return sb.append("]'").toString();
   }
 
   private String formatMapValue(final Map<?, ?> map) {
     // 예: "{\"key1\":val1, \"key2\":val2, ...}"
-    StringBuilder sb = new StringBuilder().append("\"{");
+    // 기본 용량 16 은 JSON 한 조각도 못 담아 매번 재할당된다.
+    StringBuilder sb = new StringBuilder(map.size() * 16 + 8).append("\"{");
     boolean first = true;
     for (Map.Entry<?, ?> entry : map.entrySet()) {
       if (!first) {

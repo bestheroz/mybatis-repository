@@ -82,6 +82,54 @@ public class MybatisEntityHelper {
   }
 
   /**
+   * {@link #getEntityFields(Class)} 의 순회 순서에 맞춘 {@link Field} 목록.
+   *
+   * <p>배치 인서트는 행마다 {@code MybatisCommand.toMap} 으로 {@code HashMap} 을 만든 뒤 컬럼 이름으로 다시 꺼내 쓰고 있었다.
+   * 1000행 x 20컬럼이면 그 Map 1000개와 엔트리 2만 개가 통째로 쓰레기가 된다. 값을 꺼내는 순서가 정해져 있으므로 그 순서대로 {@link Field} 만
+   * 담아 두면 Map 없이 바로 읽을 수 있다.
+   *
+   * <p>같은 이름의 필드가 상위 클래스에도 있으면 {@code toMap} 의 {@code put} 과 똑같이 뒤에 오는 것(상위 클래스 쪽)이 이긴다.
+   */
+  protected List<Field> getEntityFieldsInOrder(final Class<?> entityClass) {
+    return MybatisCommand.ORDERED_FIELD_CACHE.computeIfAbsent(
+        entityClass,
+        clazz -> {
+          final Map<String, Field> byName = new HashMap<>();
+          for (Field field : getAllNonExcludedFields(clazz)) {
+            byName.put(field.getName(), field);
+          }
+          final Set<String> fieldNames = getEntityFields(clazz);
+          final List<Field> ordered = new ArrayList<>(fieldNames.size());
+          for (String fieldName : fieldNames) {
+            ordered.add(byName.get(fieldName));
+          }
+          return Collections.unmodifiableList(ordered);
+        });
+  }
+
+  /**
+   * 자바 필드 이름에 대응하는, 백틱으로 감싼 DB 컬럼명을 돌려준다.
+   *
+   * <p>전체 컬럼 SELECT 는 질의마다 컬럼 수만큼 {@code getColumnName} 조회와 식별자 검증, 문자열 이어붙이기를 다시 했다. 결과는 JVM 이 사는
+   * 동안 바뀌지 않으므로 감싼 문자열째로 담아 둔다. 매핑되지 않은 이름과 식별자 규칙을 어긴 이름은 예외로 끝나는 오류 경로라 캐시하지 않는다.
+   */
+  protected String getWrappedColumnName(final Class<?> entityClass, final String fieldName) {
+    if (entityClass == null) {
+      return stringHelper.wrapIdentifier(getColumnName(null, fieldName));
+    }
+    final Map<String, String> byFieldName =
+        MybatisCommand.WRAPPED_COLUMN_CACHE.computeIfAbsent(
+            entityClass, clazz -> new ConcurrentHashMap<>());
+    final String cached = byFieldName.get(fieldName);
+    if (cached != null) {
+      return cached;
+    }
+    final String wrapped = stringHelper.wrapIdentifier(getColumnName(entityClass, fieldName));
+    byFieldName.put(fieldName, wrapped);
+    return wrapped;
+  }
+
+  /**
    * 클래스 계층을 순회하며 “실제 필드 레벨”에 @Column 어노테이션이 붙은 것만 필터링해서 리턴.
    *
    * <p>- jakarta.persistence.Column 또는 javax.persistence.Column 둘 다 처리 - 없으면 빈 배열 반환

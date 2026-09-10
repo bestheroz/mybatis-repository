@@ -8,7 +8,10 @@ public class MybatisRepositoryProperties {
 
   // 기본값들
   private static final int DEFAULT_MAX_IN_CLAUSE_SIZE = 1000;
-  private static final int DEFAULT_MAX_STRING_VALUE_LENGTH = 4000;
+  // SQL 리터럴 하나의 최대 길이. 값 하나가 문장을 통째로 부풀리는 것을 막는 폭주 방지선이지
+  // 컬럼 폭에 맞춘 검증이 아니다. 예전에는 4000이었는데 그 값이 String 에는 적용되지 않아 아무도
+  // 걸리지 않았고, 이제 적용하면서 긴 TEXT 컬럼을 쓰는 쪽이 업그레이드만으로 깨지지 않도록 올렸다.
+  private static final int DEFAULT_MAX_STRING_VALUE_LENGTH = 1024 * 1024;
   private static final int DEFAULT_MAX_IDENTIFIER_LENGTH = 256;
   private static final ZoneId DEFAULT_ZONE_ID = ZoneId.of("UTC");
 

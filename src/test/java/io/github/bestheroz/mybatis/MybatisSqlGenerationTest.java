@@ -8,9 +8,13 @@ import io.github.bestheroz.mybatis.type.ValueEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.Table;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -141,7 +145,8 @@ class MybatisSqlGenerationTest {
     StringBuilder expectedRows = new StringBuilder();
     for (int row = 1; row <= 2; row++) {
       if (row > 1) {
-        expectedRows.append(", ");
+        // MyBatis 가 행마다 괄호를 붙이면서 행 사이를 개행으로 끊는다
+        expectedRows.append("\n, ");
       }
       expectedRows.append('(');
       Iterator<String> it = fields.iterator();
@@ -163,7 +168,8 @@ class MybatisSqlGenerationTest {
 
     // then
     assertThat(sql).contains(expectedRows.toString());
-    assertThat(sql).contains("INSERT INTO `test_user`");
+    // 테이블명은 다른 다섯 경로와 똑같이 감싸지 않는다
+    assertThat(sql).contains("INSERT INTO test_user");
   }
 
   @Test
@@ -254,20 +260,86 @@ class MybatisSqlGenerationTest {
   }
 
   @Test
-  @DisplayName("WHERE 절이 없으면 거부하고, 대소문자가 섞여도 찾아내야 한다")
-  void ensureWhereClause_ShouldDetectWhereRegardlessOfCase() {
+  @DisplayName("길이 상한은 String 에도 똑같이 적용되어야 한다")
+  void formatValueForSQL_ShouldApplyLengthCapToStrings() {
     // given
-    SQL withoutWhere = new SQL().DELETE_FROM("test_user");
-    SQL withWhere = new SQL().DELETE_FROM("test_user").WHERE("`user_id` = 1");
+    // 예전에는 마지막 "기타 객체" 분기에만 검사가 있어서, 같은 길이라도
+    // StringBuilder 는 걸리고 String 은 그대로 통과했다.
+    MybatisRepositoryProperties.getInstance().setMaxStringValueLength(10);
+    String tooLong = "12345678901";
 
     // when / then
-    assertThatThrownBy(() -> clauseBuilder.ensureWhereClause(withoutWhere))
+    assertThatThrownBy(() -> clauseBuilder.formatValueForSQL(tooLong))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Value too long for SQL: 11");
+    assertThatThrownBy(() -> clauseBuilder.formatValueForSQL(new StringBuilder(tooLong)))
         .isInstanceOf(MybatisRepositoryException.class);
-    clauseBuilder.ensureWhereClause(withWhere);
-    clauseBuilder.ensureWhereClause("DELETE FROM t WHERE x = 1");
-    clauseBuilder.ensureWhereClause("delete from t where x = 1");
-    assertThatThrownBy(() -> clauseBuilder.ensureWhereClause("DELETE FROM t"))
+    assertThat(clauseBuilder.formatValueForSQL("1234567890")).isEqualTo("'1234567890'");
+  }
+
+  @Test
+  @DisplayName("길이 상한 기본값은 긴 TEXT 를 막지 않아야 한다")
+  void maxStringValueLength_DefaultShouldAllowLongText() {
+    // given
+    // 상한은 컬럼 폭 검증이 아니라 폭주 방지선이다. 기본값이 낮으면 긴 TEXT 컬럼을 쓰던
+    // 소비자가 업그레이드만으로 깨진다.
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 5000; i++) {
+      sb.append('a');
+    }
+
+    // when / then
+    assertThat(clauseBuilder.formatValueForSQL(sb.toString())).hasSize(5002);
+  }
+
+  @Test
+  @DisplayName("WHERE 조건이 하나도 붙지 않으면 거부해야 한다")
+  void ensureWhereClause_ShouldRejectWhenNoConditionAppended() {
+    // given / when / then
+    assertThatThrownBy(() -> clauseBuilder.ensureWhereClause(0))
         .isInstanceOf(MybatisRepositoryException.class);
+    clauseBuilder.ensureWhereClause(1);
+  }
+
+  @Test
+  @DisplayName("buildWhereClause 는 실제로 붙인 조건 개수를 돌려줘야 한다")
+  void buildWhereClause_ShouldReturnAppendedCount() {
+    // given
+    Map<String, Object> two = new LinkedHashMap<>();
+    two.put("userId", 1L);
+    two.put("name:contains", "kim");
+
+    Map<String, Object> nestedEmpty =
+        Collections.singletonMap("whereConditions", new HashMap<String, Object>());
+
+    // when / then
+    assertThat(clauseBuilder.buildWhereClause(new SQL(), two, TestUser.class)).isEqualTo(2);
+    assertThat(clauseBuilder.buildWhereClause(new SQL(), null, TestUser.class)).isZero();
+    // 중첩 whereConditions 가 빈 맵이면 바깥 맵 크기는 1이지만 조건은 0개다
+    assertThat(clauseBuilder.buildWhereClause(new SQL(), nestedEmpty, TestUser.class)).isZero();
+  }
+
+  @Test
+  @DisplayName("SET 절 값에 'where ' 가 들어 있어도 WHERE 없는 UPDATE 는 거부해야 한다")
+  void ensureWhereClause_ShouldNotBeFooledBySetLiteral() {
+    // given
+    // 예전 가드는 완성된 문장에서 "where " 를 찾았기 때문에, 값에 'somewhere' 한 단어만 있어도
+    // WHERE 없는 UPDATE 가 그대로 통과해 전 행을 갱신했다.
+    // (ProviderContext 는 생성자가 package-private 이라 buildUpdateSQL 을 직접 부를 수 없어
+    //  같은 조합을 절 빌더 수준에서 재현한다.)
+    SQL sql = new SQL().UPDATE("test_user");
+    sql.SET(clauseBuilder.buildEqualClause("name", "delivered somewhere else"));
+    Map<String, Object> nestedEmpty =
+        Collections.singletonMap("whereConditions", new HashMap<String, Object>());
+
+    // when
+    int appended = clauseBuilder.buildWhereClause(sql, nestedEmpty, TestUser.class);
+
+    // then
+    assertThat(sql.toString()).contains("somewhere ").doesNotContain("WHERE");
+    assertThatThrownBy(() -> clauseBuilder.ensureWhereClause(appended))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("whereConditions are required");
   }
 
   @Test
@@ -311,6 +383,27 @@ class MybatisSqlGenerationTest {
 
   @Table(name = "twelve_col")
   static class TwelveColumn {
+    TwelveColumn() {}
+
+    /**
+     * 필드마다 접미사가 이름과 같은 값을 채운다. 값이 전부 {@code null} 이면 컬럼 순서를 어떻게 섞어도 생성 문자열이 같아져서, 컬럼과 값이 어긋나는 회귀를
+     * 아무도 못 잡는다.
+     */
+    TwelveColumn(String prefix) {
+      this.c01 = prefix + "01";
+      this.c02 = prefix + "02";
+      this.c03 = prefix + "03";
+      this.c04 = prefix + "04";
+      this.c05 = prefix + "05";
+      this.c06 = prefix + "06";
+      this.c07 = prefix + "07";
+      this.c08 = prefix + "08";
+      this.c09 = prefix + "09";
+      this.c10 = prefix + "10";
+      this.c11 = prefix + "11";
+      this.c12 = prefix + "12";
+    }
+
     @Column private String c01;
     @Column private String c02;
     @Column private String c03;
@@ -351,6 +444,131 @@ class MybatisSqlGenerationTest {
                 + " `c07`, `c09`)\n"
                 + "VALUES (null, null, null, null, null, null, null, null, null, null, null,"
                 + " null)");
+  }
+
+  @Test
+  @DisplayName("전체 컬럼 SELECT 는 매핑된 컬럼만 백틱으로 감싸 나열해야 한다")
+  void appendSelectColumns_ShouldWrapAllMappedColumns() {
+    // given
+    SQL sql = new SQL();
+
+    // when
+    clauseBuilder.appendSelectColumns(sql, null, null, TestUser.class);
+    sql.FROM("test_user");
+
+    // then
+    // 컬럼명은 WRAPPED_COLUMN_CACHE 를 거치므로 감싼 결과가 그대로 유지되어야 한다
+    assertThat(sql.toString()).contains("`user_id`").contains("`name`");
+    assertThat(sql.toString()).doesNotContain("not_mapped");
+  }
+
+  @Test
+  @DisplayName("DISTINCT 와 대상 컬럼을 함께 주면 중복 없이 나열해야 한다")
+  void appendSelectColumns_ShouldHandleDistinctAndTarget() {
+    // given
+    Set<String> distinct = new LinkedHashSet<>();
+    distinct.add("name");
+    Set<String> target = new LinkedHashSet<>();
+    target.add("name"); // distinct 와 겹치므로 빠져야 한다
+    target.add("userId");
+    SQL sql = new SQL();
+
+    // when
+    clauseBuilder.appendSelectColumns(sql, distinct, target, TestUser.class);
+    sql.FROM("test_user");
+
+    // then
+    String rendered = sql.toString();
+    assertThat(rendered).startsWith("SELECT DISTINCT `name`, `user_id`");
+  }
+
+  @Test
+  @DisplayName("ORDER BY 는 '-' 접두사를 DESC 로 바꿔야 한다")
+  void appendOrderBy_ShouldMapMinusPrefixToDesc() {
+    // given
+    List<String> orderBy = new ArrayList<>();
+    orderBy.add("-userId");
+    orderBy.add("name");
+    SQL sql = new SQL().SELECT("1").FROM("test_user");
+
+    // when
+    clauseBuilder.appendOrderBy(sql, orderBy, TestUser.class);
+
+    // then
+    assertThat(sql.toString()).contains("ORDER BY `user_id` DESC, `name` ASC");
+  }
+
+  @Test
+  @DisplayName("매핑되지 않은 필드는 SELECT/ORDER BY 에서도 매번 예외여야 한다")
+  void wrappedColumnName_ShouldNotCacheFailures() {
+    // given
+    Set<String> unknown = new LinkedHashSet<>();
+    unknown.add("nope");
+    List<String> unknownOrder = new ArrayList<>();
+    unknownOrder.add("nope");
+
+    // when / then
+    // 실패 경로를 캐시하면 두 번째 호출이 조용히 통과할 수 있으므로 두 번 확인한다
+    for (int i = 0; i < 2; i++) {
+      assertThatThrownBy(
+              () -> clauseBuilder.appendSelectColumns(new SQL(), null, unknown, TestUser.class))
+          .isInstanceOf(MybatisRepositoryException.class);
+      assertThatThrownBy(() -> clauseBuilder.appendOrderBy(new SQL(), unknownOrder, TestUser.class))
+          .isInstanceOf(MybatisRepositoryException.class);
+    }
+  }
+
+  @Test
+  @DisplayName("배치 INSERT 컬럼 순서와 값 순서가 그대로 유지되어야 한다")
+  void buildInsertBatchSQL_ShouldKeepColumnOrderStable() {
+    // given
+    // 행마다 toMap 으로 Map 을 만들지 않고 getEntityFieldsInOrder 로 값을 바로 읽는다.
+    // 그 Field 목록의 순서가 getEntityFields 순회 순서에서 한 칸이라도 어긋나면
+    // 컬럼과 값이 서로 다른 자리에 들어가므로, 생성된 문장을 통째로 박아 둔다.
+    // 값의 접미사를 컬럼 이름의 접미사와 맞춰 둔다. 아래 기대 문자열에서 `cNN` 과 'aNN'/'bNN' 이
+    // 자리마다 짝을 이루므로, Field 목록이 한 칸이라도 밀리면 눈에 보이게 깨진다.
+    List<TwelveColumn> rows = new ArrayList<>();
+    rows.add(new TwelveColumn("a"));
+    rows.add(new TwelveColumn("b"));
+
+    // when
+    String sql = command.buildInsertBatchSQL(rows);
+
+    // then
+    // MyBatis 가 행마다 괄호를 붙이므로 VALUES (...), (...) 가 되어야 한다.
+    // 한 문자열로 넘기면 VALUES ((...), (...)) 가 되어 "row value misused" 로 실행되지 않는다.
+    assertThat(sql)
+        .isEqualTo(
+            "INSERT INTO twelve_col\n"
+                + " (`c11`, `c10`, `c02`, `c01`, `c12`, `c04`, `c03`, `c06`, `c05`, `c08`,"
+                + " `c07`, `c09`)\n"
+                + "VALUES ('a11', 'a10', 'a02', 'a01', 'a12', 'a04', 'a03', 'a06', 'a05',"
+                + " 'a08', 'a07', 'a09')\n"
+                + ", ('b11', 'b10', 'b02', 'b01', 'b12', 'b04', 'b03', 'b06', 'b05', 'b08',"
+                + " 'b07', 'b09')");
+  }
+
+  @Test
+  @DisplayName("배치 INSERT 는 첫 원소가 null 이어도 라이브러리 예외로 알려야 한다")
+  void buildInsertBatchSQL_ShouldRejectNullFirstEntity() {
+    // given
+    // expectedType 을 entities.get(0).getClass() 로 먼저 잡으면 맨 NullPointerException 이 나가
+    // "entity cannot be null in batch insert" 메시지에 닿지 못했다.
+    List<TestUser> withNullHead = new ArrayList<>();
+    withNullHead.add(null);
+    withNullHead.add(new TestUser(1L, "a"));
+
+    List<TestUser> withNullTail = new ArrayList<>();
+    withNullTail.add(new TestUser(1L, "a"));
+    withNullTail.add(null);
+
+    // when / then
+    assertThatThrownBy(() -> command.buildInsertBatchSQL(withNullHead))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("entity cannot be null");
+    assertThatThrownBy(() -> command.buildInsertBatchSQL(withNullTail))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("entity cannot be null");
   }
 
   @Test
