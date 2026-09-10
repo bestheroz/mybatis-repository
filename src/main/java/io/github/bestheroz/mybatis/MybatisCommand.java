@@ -40,10 +40,18 @@ public class MybatisCommand {
       new ConcurrentHashMap<>();
 
   /**
-   * 엔티티 → {@code FIELD_NAME_CACHE} 순회 순서에 맞춘 {@link Field} 목록. 배치 인서트가 행마다 {@code toMap} 으로 Map 을
-   * 만들지 않고 값을 바로 읽게 한다.
+   * 엔티티 → {@code FIELD_NAME_CACHE} 순회 순서에 맞춘 {@link Field} 목록. 인서트가 값을 꺼낼 때 {@code toMap} 으로 Map 을
+   * 만들지 않고 바로 읽게 한다.
    */
   protected static final Map<Class<?>, List<Field>> ORDERED_FIELD_CACHE = new ConcurrentHashMap<>();
+
+  /**
+   * 엔티티 → 전체 컬럼 SELECT 에 쓰는, {@code ", "} 로 이어 붙인 백틱 컬럼 목록.
+   *
+   * <p>가장 흔한 질의 모양인 전체 컬럼 SELECT 는 컬럼마다 캐시 조회 두 번과 {@code SQL#SELECT} 호출 한 번을 되풀이했다. 이어 붙인 결과는 JVM
+   * 이 사는 동안 바뀌지 않고, MyBatis 는 SELECT 목록을 어차피 {@code ", "} 로 잇기 때문에 한 번에 넘겨도 만들어지는 문장이 같다.
+   */
+  protected static final Map<Class<?>, String> SELECT_COLUMNS_CACHE = new ConcurrentHashMap<>();
 
   // ======================
   // Allowed Method List (기존과 동일)
@@ -178,14 +186,29 @@ public class MybatisCommand {
       throw new MybatisRepositoryException("entity is null for insert");
     }
 
-    String tableName = entityHelper.getTableName(entity.getClass());
+    final Class<?> entityClass = entity.getClass();
+    String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().INSERT_INTO(tableName);
 
-    Map<String, Object> entityMap = toMap(entity);
-    for (Map.Entry<String, Object> entry : entityMap.entrySet()) {
+    // 배치 인서트와 같은 Field 목록에서 값을 바로 읽는다. 예전에는 toMap 으로 HashMap 을 만든 뒤
+    // 그 entrySet 을 돌았는데, 필요한 것은 (컬럼, 값) 짝뿐이라 인서트마다 Map 하나와 엔트리 N개가
+    // 통째로 쓰레기가 됐다. ORDERED_FIELD_CACHE 의 순서는 toMap 이 만들던 HashMap 의 버킷
+    // 순서와 같으므로(둘 다 같은 키를 같은 순서로 담은 기본 용량 해시 컨테이너다) 생성되는
+    // 문장도 그대로다 -- MybatisSqlGenerationTest 가 4컬럼과 12컬럼 문장을 통째로 박아 두어 지킨다.
+    for (Field field : entityHelper.getEntityFieldsInOrder(entityClass)) {
+      final Object value;
+      try {
+        // setAccessible 은 캐시에 담을 때 이미 끝냈다.
+        value = field.get(entity);
+      } catch (Exception e) {
+        // toMap 이 읽지 못한 필드를 Map 에 담지 않아 그 컬럼이 문장에서 통째로 빠지던 것과 맞춘다.
+        log.warn("Failed to get field value for {}: {}", field.getName(), e.getMessage());
+        log.debug("Stack trace: ", e);
+        continue;
+      }
       sql.VALUES(
-          entityHelper.getWrappedColumnName(entity.getClass(), entry.getKey()),
-          clauseBuilder.formatValueForSQL(entry.getValue()));
+          entityHelper.getWrappedColumnName(entityClass, field.getName()),
+          clauseBuilder.formatValueForSQL(value));
     }
 
     return renderAndLog(sql, "insert");

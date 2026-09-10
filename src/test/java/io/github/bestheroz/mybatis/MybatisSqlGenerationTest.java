@@ -373,6 +373,59 @@ class MybatisSqlGenerationTest {
     }
   }
 
+  @Table(name = "three_col")
+  static class ThreeColumn {
+    @Column private String alpha;
+    @Column private String bravo;
+    @Column private String charlie;
+  }
+
+  @Table(name = "five_col")
+  static class FiveColumn {
+    @Column private String alpha;
+    @Column private String bravo;
+    @Column private String charlie;
+    @Column private String delta;
+    @Column private String echo;
+  }
+
+  /** HashMap 의 두 번째 리사이즈 문턱(용량 32 에서 24개)에 걸치는 크기다. */
+  @Table(name = "twenty_four_col")
+  static class TwentyFourColumn {
+    @Column private String f01;
+    @Column private String f02;
+    @Column private String f03;
+    @Column private String f04;
+    @Column private String f05;
+    @Column private String f06;
+    @Column private String f07;
+    @Column private String f08;
+    @Column private String f09;
+    @Column private String f10;
+    @Column private String f11;
+    @Column private String f12;
+    @Column private String f13;
+    @Column private String f14;
+    @Column private String f15;
+    @Column private String f16;
+    @Column private String f17;
+    @Column private String f18;
+    @Column private String f19;
+    @Column private String f20;
+    @Column private String f21;
+    @Column private String f22;
+    @Column private String f23;
+    @Column private String f24;
+  }
+
+  /**
+   * @Column 이 하나도 없다. 전체 컬럼 SELECT 가 빈 컬럼을 만들어 내면 안 된다.
+   */
+  @Table(name = "no_col")
+  static class NoColumn {
+    private String ignored;
+  }
+
   @Table(name = "four_col")
   static class FourColumn {
     @Column private String alpha;
@@ -422,9 +475,10 @@ class MybatisSqlGenerationTest {
   @DisplayName("INSERT 컬럼 순서가 그대로 유지되어야 한다")
   void buildInsertSQL_ShouldKeepColumnOrderStable() {
     // given
-    // buildInsertSQL 은 toMap 이 돌려준 HashMap 의 entrySet 을 그대로 순회하므로,
-    // 그 맵의 용량이 곧 컬럼 순서를 정한다. 실제로 toMap 에 크기를 미리 지정했다가
-    // @Column 이 3, 4, 5, 12, 24개인 엔티티에서 순서가 바뀌는 것을 확인했다.
+    // buildInsertSQL 은 ORDERED_FIELD_CACHE 의 Field 목록을 순회하고, 그 순서는
+    // FIELD_NAME_CACHE(HashSet) 의 순회 순서다. 해시 컨테이너의 용량이 곧 컬럼 순서를
+    // 정하므로, 캐시를 만드는 방식이 바뀌면 순서가 조용히 바뀐다. 실제로 toMap 에 크기를
+    // 미리 지정했다가 @Column 이 3, 4, 5, 12, 24개인 엔티티에서 순서가 바뀌는 것을 확인했다.
     // 생성된 SQL 을 통째로 박아 두어야만 이런 변경이 드러나므로 여기서 고정한다.
 
     // when
@@ -580,5 +634,91 @@ class MybatisSqlGenerationTest {
         .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> command.buildDeleteSQL(null, null))
         .isInstanceOf(MybatisRepositoryException.class);
+  }
+
+  @Test
+  @DisplayName("INSERT 컬럼 순서는 toMap 의 순회 순서와 계속 같아야 한다")
+  void buildInsertSQL_ShouldFollowSameOrderAsToMap() {
+    // given
+    // buildInsertSQL 은 toMap 대신 ORDERED_FIELD_CACHE 에서 값을 바로 읽는다.
+    // 그런데 updateById 경로의 UPDATE SET 절은 여전히 toMap 의 entrySet 순서를 쓰므로,
+    // 두 순서가 어긋나면 같은 엔티티가 INSERT 와 UPDATE 에서 다른 컬럼 순서로 나간다.
+    // 해시 용량 문턱에 걸치는 크기들을 모아 두 순서가 같은지 직접 맞춰 본다.
+    List<Object> samples = new ArrayList<>();
+    samples.add(new TestUser(1L, "n"));
+    samples.add(new ThreeColumn());
+    samples.add(new FourColumn());
+    samples.add(new FiveColumn());
+    samples.add(new TwelveColumn());
+    samples.add(new TwentyFourColumn());
+
+    // when / then
+    for (Object sample : samples) {
+      List<String> fromOrderedCache = new ArrayList<>();
+      for (java.lang.reflect.Field field : entityHelper.getEntityFieldsInOrder(sample.getClass())) {
+        fromOrderedCache.add(field.getName());
+      }
+      List<String> fromToMap = new ArrayList<>(MybatisCommand.toMap(sample).keySet());
+
+      assertThat(fromOrderedCache)
+          .as("엔티티: %s", sample.getClass().getSimpleName())
+          .containsExactlyElementsOf(fromToMap);
+    }
+  }
+
+  @Test
+  @DisplayName("이어 붙인 SELECT 컬럼 목록은 컬럼을 하나씩 넘긴 것과 같은 문장을 내야 한다")
+  void getSelectColumnList_ShouldRenderSameAsColumnByColumn() {
+    // given
+    // 전체 컬럼 SELECT 는 이제 캐시된 문자열 하나를 SQL#SELECT 에 넘긴다.
+    // MyBatis 가 SELECT 목록을 ", " 로 잇는다는 전제 위에 서 있으므로, 예전처럼
+    // 컬럼을 하나씩 넘긴 문장과 글자까지 같은지 확인한다.
+    SQL oneByOne = new SQL();
+    for (String field : entityHelper.getEntityFields(TwelveColumn.class)) {
+      oneByOne.SELECT(entityHelper.getWrappedColumnName(TwelveColumn.class, field));
+    }
+    oneByOne.FROM("twelve_col");
+
+    SQL joined = new SQL();
+
+    // when
+    clauseBuilder.appendSelectColumns(joined, null, null, TwelveColumn.class);
+    joined.FROM("twelve_col");
+
+    // then
+    assertThat(joined.toString()).isEqualTo(oneByOne.toString());
+  }
+
+  @Test
+  @DisplayName("매핑된 컬럼이 없으면 SELECT 절 자체가 생기지 않아야 한다")
+  void getSelectColumnList_ShouldEmitNothingWhenEntityHasNoColumns() {
+    // given
+    // 빈 문자열을 그대로 SQL#SELECT 에 넘기면 빈 컬럼 하나가 목록에 들어가
+    // "SELECT , 1" 처럼 아무것도 넘기지 않았을 때와 문장이 달라진다.
+    SQL actual = new SQL();
+    SQL control = new SQL();
+
+    // when
+    clauseBuilder.appendSelectColumns(actual, null, null, NoColumn.class);
+    actual.SELECT("1").FROM("no_col");
+    control.SELECT("1").FROM("no_col");
+
+    // then
+    assertThat(entityHelper.getSelectColumnList(NoColumn.class)).isEmpty();
+    assertThat(actual.toString()).isEqualTo(control.toString());
+  }
+
+  @Test
+  @DisplayName("SELECT 컬럼 목록을 캐시해도 매번 같은 값을 돌려주어야 한다")
+  void getSelectColumnList_ShouldStayConsistentAcrossRepeatedCalls() {
+    // given
+    String first = entityHelper.getSelectColumnList(TestUser.class);
+
+    // when
+    String second = entityHelper.getSelectColumnList(TestUser.class);
+
+    // then
+    assertThat(second).isEqualTo(first);
+    assertThat(first).contains("`user_id`").contains("`name`").doesNotContain("not_mapped");
   }
 }

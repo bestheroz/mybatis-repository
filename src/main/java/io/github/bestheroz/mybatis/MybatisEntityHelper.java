@@ -108,6 +108,33 @@ public class MybatisEntityHelper {
   }
 
   /**
+   * 전체 컬럼 SELECT 에 쓰는, {@code ", "} 로 이어 붙인 백틱 컬럼 목록.
+   *
+   * <p>{@code getItems()} 류의 전체 컬럼 조회는 라이브러리에서 가장 흔한 질의인데, 컬럼 하나마다 {@link #getWrappedColumnName}
+   * (중첩 맵 조회 두 번)과 {@code SQL#SELECT} 호출을 되풀이했다. 결과가 JVM 이 사는 동안 바뀌지 않으므로 이어 붙인 문자열째로 담아 둔다.
+   *
+   * <p>MyBatis 의 {@code AbstractSQL} 은 SELECT 목록을 {@code ", "} 로 이어 붙이므로, 이미 이어 붙인 문자열 하나를 넘겨도 컬럼을
+   * 하나씩 넘긴 것과 만들어지는 문장이 같다.
+   *
+   * <p>@Column 필드가 하나도 없으면 빈 문자열을 돌려준다. 호출부는 그때 {@code SELECT} 를 아예 부르지 않아야 한다 -- 빈 문자열을 넘기면 빈 컬럼
+   * 하나가 목록에 들어가, 아무것도 넘기지 않았을 때와 문장이 달라진다.
+   */
+  protected String getSelectColumnList(final Class<?> entityClass) {
+    return MybatisCommand.SELECT_COLUMNS_CACHE.computeIfAbsent(
+        entityClass,
+        clazz -> {
+          final StringBuilder sb = new StringBuilder();
+          for (String fieldName : getEntityFields(clazz)) {
+            if (sb.length() > 0) {
+              sb.append(", ");
+            }
+            sb.append(getWrappedColumnName(clazz, fieldName));
+          }
+          return sb.toString();
+        });
+  }
+
+  /**
    * 자바 필드 이름에 대응하는, 백틱으로 감싼 DB 컬럼명을 돌려준다.
    *
    * <p>전체 컬럼 SELECT 는 질의마다 컬럼 수만큼 {@code getColumnName} 조회와 식별자 검증, 문자열 이어붙이기를 다시 했다. 결과는 JVM 이 사는

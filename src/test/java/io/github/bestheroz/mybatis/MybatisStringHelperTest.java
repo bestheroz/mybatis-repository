@@ -423,4 +423,85 @@ class MybatisStringHelperTest {
     assertThatThrownBy(() -> helper.wrapIdentifier("SeLeCt"))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("따옴표까지 한 번에 붙이는 경로가 기존 표현식과 완전히 같은 리터럴을 내야 한다")
+  void quoteAndEscape_ShouldMatchQuotedEscapeSingleQuote() {
+    // given
+    // quoteAndEscape 는 "'" + escapeSingleQuote(v) + "'" 를 대체하는 자리다.
+    // 이스케이프 관문을 우회하지 않았음을 같은 말뭉치로 확인한다.
+    final char[] interesting = {
+      '\'', '\\', '\0', '\n', '\r', '\t', '\b', '\f', '"', '\u001A', 'a', '0', ' ', '가', '%', '`'
+    };
+    final List<String> corpus = new ArrayList<>();
+    corpus.add("");
+    corpus.add("평범한 값");
+    corpus.add("O'Brien");
+    corpus.add("C:\\path\\to");
+    for (char first : interesting) {
+      corpus.add(String.valueOf(first));
+      for (char second : interesting) {
+        corpus.add(new String(new char[] {first, second}));
+        for (char third : interesting) {
+          corpus.add(new String(new char[] {first, second, third}));
+        }
+      }
+    }
+
+    // when / then
+    for (String input : corpus) {
+      assertThat(helper.quoteAndEscape(input))
+          .as("입력: %s", java.util.Arrays.toString(input.toCharArray()))
+          .isEqualTo("'" + helper.escapeSingleQuote(input) + "'");
+    }
+  }
+
+  @Test
+  @DisplayName("null 값은 예전처럼 'null' 리터럴이 되어야 한다")
+  void quoteAndEscape_ShouldRenderNullAsQuotedNull() {
+    // given / when / then
+    // ValueEnum.getValue() 가 null 을 주면 예전 표현식은 문자열 이어붙이기로 'null' 이 됐다.
+    // 값이 바뀌면 저장되는 내용이 달라지므로 그대로 맞춘다.
+    assertThat(helper.quoteAndEscape(null)).isEqualTo("'null'");
+  }
+
+  @Test
+  @DisplayName("길이 사전 검사는 어떤 파서도 못 읽는 값만 걸러내야 한다")
+  void isISO8601String_ShouldOnlyRejectLengthsNoParserAccepts() {
+    // given
+    // 오프셋까지 갖춘 가장 짧은 형태가 20자다. 이보다 짧으면서 문자 개수 조건을 만족하는 값은
+    // 자리수가 안 맞는 값뿐이라 어차피 parseIso8601 이 null 을 돌려준다.
+    String shortestParseable = "2025-01-02T12:34:56Z"; // 20자
+    String nineteenCharLookalike = "2025-1-02T12:34:56Z"; // 19자, 영 padding 없음
+    String withNanosAndOffset = "2025-01-02T12:34:56.123456789+09:00"; // 35자
+
+    // when / then
+    assertThat(shortestParseable).hasSize(20);
+    assertThat(helper.isISO8601String(shortestParseable)).isTrue();
+    assertThat(helper.parseIso8601(shortestParseable)).isNotNull();
+
+    assertThat(withNanosAndOffset).hasSize(35);
+    assertThat(helper.isISO8601String(withNanosAndOffset)).isTrue();
+    assertThat(helper.parseIso8601(withNanosAndOffset)).isNotNull();
+
+    // 길이 게이트가 떨어뜨리는 값은 게이트가 없어도 파싱에 실패하던 값이어야 한다
+    assertThat(nineteenCharLookalike).hasSize(19);
+    assertThat(helper.isISO8601String(nineteenCharLookalike)).isFalse();
+    assertThat(helper.parseIso8601(nineteenCharLookalike)).isNull();
+  }
+
+  @Test
+  @DisplayName("긴 텍스트 값은 전체를 훑지 않고 길이만으로 걸러져야 한다")
+  void isISO8601String_ShouldRejectLongTextCheaply() {
+    // given
+    // 시각일 리 없는 긴 TEXT/JSON 값이 저장될 때마다 값 전체를 세던 자리다.
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      sb.append("2025-01-02T12:34:56Z,");
+    }
+    String longText = sb.toString();
+
+    // when / then
+    assertThat(helper.isISO8601String(longText)).isFalse();
+  }
 }

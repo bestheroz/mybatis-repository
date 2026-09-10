@@ -108,8 +108,11 @@ public class MybatisClauseBuilder {
     // 둘 다 비었으면, 전체 필드 SELECT
     if ((distinctColumns == null || distinctColumns.isEmpty())
         && (targetColumns == null || targetColumns.isEmpty())) {
-      for (String field : entityHelper.getEntityFields(entityClass)) {
-        sql.SELECT(entityHelper.getWrappedColumnName(entityClass, field));
+      // 이어 붙인 목록을 캐시에서 한 번에 가져온다. 컬럼이 없으면 SELECT 를 부르지 않아야
+      // 빈 컬럼 하나가 목록에 들어가는 것을 피할 수 있다(컬럼을 하나씩 넘기던 때와 같은 문장).
+      final String columns = entityHelper.getSelectColumnList(entityClass);
+      if (!columns.isEmpty()) {
+        sql.SELECT(columns);
       }
       return;
     }
@@ -280,7 +283,7 @@ public class MybatisClauseBuilder {
     // 기타 객체는 문자열로 변환 후 이스케이프
     String stringValue = value.toString();
     ensureValueLength(stringValue.length());
-    return "'" + stringHelper.escapeSingleQuote(stringValue) + "'";
+    return stringHelper.quoteAndEscape(stringValue);
   }
 
   /**
@@ -308,17 +311,17 @@ public class MybatisClauseBuilder {
       // 모양만 닮았을 뿐 시각이 아니면 예외로 질의를 깨뜨리지 않고 평범한 문자열로 떨어뜨린다
     }
     // 일반 문자열
-    return "'" + stringHelper.escapeSingleQuote(str) + "'";
+    return stringHelper.quoteAndEscape(str);
   }
 
   private String formatEnumValue(final Enum<?> enumValue) {
     if (enumValue instanceof ValueEnum) {
       ValueEnum ve = (ValueEnum) enumValue;
       // getValue() 는 구현하는 쪽이 정하는 임의의 문자열이라 다른 값과 똑같이 이스케이프를 거쳐야 한다.
-      return "'" + stringHelper.escapeSingleQuote(ve.getValue()) + "'";
+      return stringHelper.quoteAndEscape(ve.getValue());
     }
     // 기본 name() (자바 식별자라 바뀔 문자는 없지만 경로를 하나로 맞춘다)
-    return "'" + stringHelper.escapeSingleQuote(enumValue.name()) + "'";
+    return stringHelper.quoteAndEscape(enumValue.name());
   }
 
   private String formatCollectionValue(final Collection<?> collection) {
