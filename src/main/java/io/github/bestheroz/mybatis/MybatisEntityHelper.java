@@ -118,16 +118,24 @@ public class MybatisEntityHelper {
    *
    * <p>@Column 필드가 하나도 없으면 빈 문자열을 돌려준다. 호출부는 그때 {@code SELECT} 를 아예 부르지 않아야 한다 -- 빈 문자열을 넘기면 빈 컬럼
    * 하나가 목록에 들어가, 아무것도 넘기지 않았을 때와 문장이 달라진다.
+   *
+   * <p>배치 인서트의 {@code INTO_COLUMNS} 도 같은 문자열을 쓴다. 그쪽은 배치마다 같은 집합을 같은 순서로 같은 구분자로 다시 이어 붙이고 있었는데, 컬럼
+   * 목록에 SELECT 와 INSERT 의 차이가 없으므로 이름과 달리 이 캐시가 두 경로를 함께 덮는다.
    */
   protected String getSelectColumnList(final Class<?> entityClass) {
     return MybatisCommand.SELECT_COLUMNS_CACHE.computeIfAbsent(
         entityClass,
         clazz -> {
           final StringBuilder sb = new StringBuilder();
+          // 첫 컬럼 판정에 sb.length() 를 쓰지 않는다. 감싼 컬럼명이 빈 문자열일 수는 없어 지금은
+          // 결과가 같지만, 그 전제가 깨지면 구분자 하나가 조용히 빠진다. 배치 인서트가 쓰던
+          // Collectors.joining 과 같은 기준(앞에 하나라도 붙었는가)으로 맞춰 둔다.
+          boolean first = true;
           for (String fieldName : getEntityFields(clazz)) {
-            if (sb.length() > 0) {
+            if (!first) {
               sb.append(", ");
             }
+            first = false;
             sb.append(getWrappedColumnName(clazz, fieldName));
           }
           return sb.toString();

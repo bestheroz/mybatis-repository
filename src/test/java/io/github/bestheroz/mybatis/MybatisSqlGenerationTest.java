@@ -501,6 +501,43 @@ class MybatisSqlGenerationTest {
   }
 
   @Test
+  @DisplayName("단건 INSERT 도 컬럼과 값이 자리마다 짝을 이뤄야 한다")
+  void buildInsertSQL_ShouldAlignValuesWithColumns() {
+    // given
+    // 위의 순서 고정 테스트는 값이 전부 null 이라, 컬럼과 값이 한 칸 어긋나도 문장이 똑같아
+    // 어긋남 자체를 볼 수 없다. 값의 접미사를 컬럼 이름과 맞춘 행으로 그 짝까지 고정한다.
+    TwelveColumn row = new TwelveColumn("a");
+
+    // when
+    String sql = command.buildInsertSQL(row);
+
+    // then
+    assertThat(sql)
+        .isEqualTo(
+            "INSERT INTO twelve_col\n"
+                + " (`c11`, `c10`, `c02`, `c01`, `c12`, `c04`, `c03`, `c06`, `c05`, `c08`,"
+                + " `c07`, `c09`)\n"
+                + "VALUES ('a11', 'a10', 'a02', 'a01', 'a12', 'a04', 'a03', 'a06', 'a05',"
+                + " 'a08', 'a07', 'a09')");
+  }
+
+  @Test
+  @DisplayName("배치 INSERT 의 컬럼 목록은 전체 컬럼 SELECT 목록과 같아야 한다")
+  void buildInsertBatchSQL_ShouldUseSameColumnListAsSelect() {
+    // given
+    // 배치 인서트는 컬럼 목록을 스트림으로 다시 잇지 않고 SELECT 가 쓰는 캐시를 그대로 쓴다.
+    // 두 경로가 갈라지면 배치 인서트 컬럼 목록이 조용히 달라지므로 여기서 묶어 둔다.
+    List<TwelveColumn> rows = new ArrayList<>();
+    rows.add(new TwelveColumn("a"));
+
+    // when
+    String sql = command.buildInsertBatchSQL(rows);
+
+    // then
+    assertThat(sql).contains("(" + entityHelper.getSelectColumnList(TwelveColumn.class) + ")");
+  }
+
+  @Test
   @DisplayName("전체 컬럼 SELECT 는 매핑된 컬럼만 백틱으로 감싸 나열해야 한다")
   void appendSelectColumns_ShouldWrapAllMappedColumns() {
     // given

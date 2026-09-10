@@ -15,8 +15,7 @@ public enum Condition {
   NE("ne") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      // <>
-      return "`" + dbColumnName + "` <> " + builder.formatValueForSQL(value);
+      return builder.buildComparisonClause(dbColumnName, "<>", value);
     }
   },
   NOT("not") {
@@ -41,71 +40,65 @@ public enum Condition {
   IS_NULL("null") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      return "`" + dbColumnName + "` IS NULL";
+      return builder.buildNullClause(dbColumnName, false);
     }
   },
   IS_NOT_NULL("notNull") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      return "`" + dbColumnName + "` IS NOT NULL";
+      return builder.buildNullClause(dbColumnName, true);
     }
   },
   CONTAINS("contains") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
       // INSTR(`column`, 'value') > 0
-      return "INSTR(`" + dbColumnName + "`, " + builder.formatValueForSQL(value) + ") > 0";
+      return builder.buildInstrClause(dbColumnName, value, "> 0");
     }
   },
   NOT_CONTAINS("notContains") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
       // INSTR(`column`, 'value') = 0
-      return "INSTR(`" + dbColumnName + "`, " + builder.formatValueForSQL(value) + ") = 0";
+      return builder.buildInstrClause(dbColumnName, value, "= 0");
     }
   },
   STARTS_WITH("startsWith") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
       // INSTR(`column`, 'value') = 1
-      return "INSTR(`" + dbColumnName + "`, " + builder.formatValueForSQL(value) + ") = 1";
+      return builder.buildInstrClause(dbColumnName, value, "= 1");
     }
   },
   ENDS_WITH("endsWith") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
       // RIGHT(`column`, CHAR_LENGTH('value')) = 'value'
-      // 같은 값을 두 번 포맷하고 있었다. 문자열 값이면 이스케이프까지 두 번 도는 셈이다.
-      final String formatted = builder.formatValueForSQL(value);
-      return "RIGHT(`" + dbColumnName + "`, CHAR_LENGTH(" + formatted + ")) = " + formatted;
+      return builder.buildEndsWithClause(dbColumnName, value);
     }
   },
   LT("lt") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      // <
-      return "`" + dbColumnName + "` < " + builder.formatValueForSQL(value);
+      return builder.buildComparisonClause(dbColumnName, "<", value);
     }
   },
   LTE("lte") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      // <=
-      return "`" + dbColumnName + "` <= " + builder.formatValueForSQL(value);
+      return builder.buildComparisonClause(dbColumnName, "<=", value);
     }
   },
   GT("gt") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      // >
-      return "`" + dbColumnName + "` > " + builder.formatValueForSQL(value);
+      return builder.buildComparisonClause(dbColumnName, ">", value);
     }
   },
   GTE("gte") {
     @Override
     public String buildClause(String dbColumnName, Object value, MybatisClauseBuilder builder) {
-      // >=
-      return "`" + dbColumnName + "` >= " + builder.formatValueForSQL(value);
+      return builder.buildComparisonClause(dbColumnName, ">=", value);
     }
   };
 

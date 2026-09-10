@@ -4,7 +4,6 @@ import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import org.apache.ibatis.builder.annotation.ProviderContext;
 import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;
@@ -65,7 +64,6 @@ public class MybatisCommand {
   public static final String DELETE_BY_MAP = "buildDeleteSQL";
 
   private final MybatisEntityHelper entityHelper;
-  private final MybatisStringHelper stringHelper;
   private final MybatisClauseBuilder clauseBuilder;
 
   // 싱글톤 인스턴스들 (성능 최적화)
@@ -98,17 +96,19 @@ public class MybatisCommand {
   }
 
   public MybatisCommand() {
-    this.stringHelper = SHARED_STRING_HELPER;
     this.entityHelper = SHARED_ENTITY_HELPER;
     this.clauseBuilder = SHARED_CLAUSE_BUILDER;
   }
 
+  /**
+   * {@code stringHelper} 는 받아만 두고 쓰지 않는다. 이 클래스가 문자열을 직접 다루는 자리는 없고 이스케이프는 모두 {@code clauseBuilder}
+   * 를 거치기 때문이다. 매개변수를 지우면 이 생성자를 부르는 쪽이 깨지므로 시그니처는 그대로 둔다.
+   */
   public MybatisCommand(
       MybatisEntityHelper entityHelper,
       MybatisStringHelper stringHelper,
       MybatisClauseBuilder clauseBuilder) {
     this.entityHelper = entityHelper;
-    this.stringHelper = stringHelper;
     this.clauseBuilder = clauseBuilder;
   }
 
@@ -195,6 +195,9 @@ public class MybatisCommand {
     // 통째로 쓰레기가 됐다. ORDERED_FIELD_CACHE 의 순서는 toMap 이 만들던 HashMap 의 버킷
     // 순서와 같으므로(둘 다 같은 키를 같은 순서로 담은 기본 용량 해시 컨테이너다) 생성되는
     // 문장도 그대로다 -- MybatisSqlGenerationTest 가 4컬럼과 12컬럼 문장을 통째로 박아 두어 지킨다.
+    // 컬럼명도 같은 순서로 캐시해 두고 인덱스로 짝지어 보았지만(중첩 맵 조회 2회 → 목록 읽기 1회)
+    // 20컬럼 인서트에서 오히려 3~4% 느렸다. getWrappedColumnName 은 이미 캐시된 조회라 아낄 것이
+    // 없고, 값과 어긋나면 다른 컬럼에 쓰는 정렬 불변식만 하나 더 생긴다. 재보지 않고 되돌리지 말 것.
     for (Field field : entityHelper.getEntityFieldsInOrder(entityClass)) {
       final Object value;
       try {
@@ -225,17 +228,16 @@ public class MybatisCommand {
     final Class<?> expectedType = requireSingleEntityType(entities);
 
     String tableName = entityHelper.getTableName(expectedType);
-    Set<String> columns = entityHelper.getEntityFields(expectedType);
 
     // INSERT INTO table (col1, col2, …)
     // 테이블명은 나머지 다섯 경로(count/select/insert/update/delete)와 똑같이 감싸지 않는다.
     // 여기만 wrapIdentifier 를 거치면 컬럼용 규칙이 테이블명에 적용되어, @Table(name="shop.orders")
     // 처럼 스키마를 붙인 이름이나 차단 목록에 걸리는 이름이 배치 인서트에서만 예외가 났다.
+    //
+    // 컬럼 목록은 배치마다 스트림으로 다시 이어 붙이고 있었다. 전체 컬럼 SELECT 가 쓰는 캐시와
+    // 같은 집합을 같은 순서로 같은 구분자(", ")로 잇는 것이라 결과 문자열이 글자까지 같다.
     SQL sql = new SQL().INSERT_INTO(tableName);
-    sql.INTO_COLUMNS(
-        columns.stream()
-            .map(v -> entityHelper.getWrappedColumnName(expectedType, v))
-            .collect(Collectors.joining(", ")));
+    sql.INTO_COLUMNS(entityHelper.getSelectColumnList(expectedType));
 
     // VALUES ( … ), ( … ), …
     // MyBatis 의 insertSQL 은 INTO_VALUES 로 넣어 둔 목록을 통째로 괄호로 한 번 감싼다. 그래서 행마다
@@ -244,7 +246,7 @@ public class MybatisCommand {
     // 값은 컬럼 순서대로만 꺼내 쓰므로 행마다 toMap 으로 Map 을 만들 이유가 없다.
     // 그 순서에 맞춰 둔 Field 목록에서 곧바로 읽는다(1000행 x 20컬럼이면 Map 1000개가 사라진다).
     final List<Field> orderedFields = entityHelper.getEntityFieldsInOrder(expectedType);
-    final StringBuilder row = new StringBuilder(columns.size() * 16);
+    final StringBuilder row = new StringBuilder(orderedFields.size() * 16);
     boolean firstRow = true;
     for (T entity : entities) {
       if (!firstRow) {

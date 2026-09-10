@@ -83,6 +83,7 @@ public class MybatisClauseBuilder {
     return appended;
   }
 
+  @SuppressWarnings("unchecked") // 조건 맵의 값 타입은 프로토콜상 호출부가 보장한다
   private Map<String, Object> extractWhereConditions(Map<String, Object> params) {
     Object whereConditions = params.get("whereConditions");
     if (whereConditions instanceof Map) {
@@ -201,7 +202,12 @@ public class MybatisClauseBuilder {
 
     // String.format 은 포맷 문자열을 매번 파싱하고 Formatter 를 새로 만든다. 조건 하나마다 거치는 자리다.
     // (isNotIn 이 false 일 때 공백이 둘인 것은 기존 출력 그대로 유지한 것이다.)
-    final StringBuilder sb = new StringBuilder(dbColumnName.length() + inValues.size() * 8 + 16);
+    // 곱을 int 로 계산하면 maxInClauseSize 를 크게 올려 둔 소비자에게서 음수로 뒤집혀
+    // NegativeArraySizeException 이 난다. 초기 크기 힌트일 뿐이므로 formatCollectionValue 와
+    // 같은 방식으로 long 으로 계산해 상한에서 자른다.
+    final StringBuilder sb =
+        new StringBuilder(
+            (int) Math.min(dbColumnName.length() + (long) inValues.size() * 8L + 16L, 1L << 20));
     sb.append('`').append(dbColumnName).append("` ").append(isNotIn ? "NOT" : "").append(" IN (");
     boolean first = true;
     for (Object inValue : inValues) {
@@ -215,7 +221,69 @@ public class MybatisClauseBuilder {
   }
 
   protected String buildEqualClause(final String dbColumnName, final Object value) {
-    return "`" + dbColumnName + "` = " + formatValueForSQL(value);
+    return buildComparisonClause(dbColumnName, "=", value);
+  }
+
+  /**
+   * {@code `column` <op> value} 모양의 절을 만든다. eq/ne/lt/lte/gt/gte 가 연산자만 다른 같은 문장이라 한자리에 모은다.
+   *
+   * <p>속도 때문이 아니다. 재어 보면 예전의 {@code "`" + col + "` = " + v} 와 나노초 단위 잡음 안에서 오간다 -- JIT 가 인라인 연결식을
+   * 이미 한 번에 크기를 잡아 처리하므로 미리 잡아 얻는 것이 없다. 값을 SQL 텍스트로 만드는 자리를 이 클래스 하나에 모아 두는 것이 목적이다. 분기마다 SQL 을 직접
+   * 이어 붙이면 언젠가 따옴표도 직접 붙이게 되고, 그 순간 이스케이프 관문을 비켜 간다.
+   */
+  protected String buildComparisonClause(
+      final String dbColumnName, final String operator, final Object value) {
+    final String formatted = formatValueForSQL(value);
+    return new StringBuilder(dbColumnName.length() + operator.length() + formatted.length() + 4)
+        .append('`')
+        .append(dbColumnName)
+        .append("` ")
+        .append(operator)
+        .append(' ')
+        .append(formatted)
+        .toString();
+  }
+
+  /**
+   * {@code INSTR(`column`, value) <comparison>} 모양의 절을 만든다. contains/notContains/startsWith 가 뒤의
+   * 비교만 다른 같은 문장이다.
+   */
+  protected String buildInstrClause(
+      final String dbColumnName, final Object value, final String comparison) {
+    final String formatted = formatValueForSQL(value);
+    return new StringBuilder(dbColumnName.length() + formatted.length() + comparison.length() + 12)
+        .append("INSTR(`")
+        .append(dbColumnName)
+        .append("`, ")
+        .append(formatted)
+        .append(") ")
+        .append(comparison)
+        .toString();
+  }
+
+  /**
+   * {@code RIGHT(`column`, CHAR_LENGTH(value)) = value}. 같은 값을 두 번 쓰므로 한 번만 포맷한다(문자열이면 이스케이프도 한 번만
+   * 돈다).
+   */
+  protected String buildEndsWithClause(final String dbColumnName, final Object value) {
+    final String formatted = formatValueForSQL(value);
+    return new StringBuilder(dbColumnName.length() + formatted.length() * 2 + 28)
+        .append("RIGHT(`")
+        .append(dbColumnName)
+        .append("`, CHAR_LENGTH(")
+        .append(formatted)
+        .append(")) = ")
+        .append(formatted)
+        .toString();
+  }
+
+  /** {@code `column` IS NULL} / {@code `column` IS NOT NULL}. */
+  protected String buildNullClause(final String dbColumnName, final boolean isNotNull) {
+    return new StringBuilder(dbColumnName.length() + 16)
+        .append('`')
+        .append(dbColumnName)
+        .append(isNotNull ? "` IS NOT NULL" : "` IS NULL")
+        .toString();
   }
 
   // ===========================================
