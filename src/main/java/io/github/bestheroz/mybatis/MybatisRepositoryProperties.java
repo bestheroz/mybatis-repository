@@ -15,10 +15,13 @@ public class MybatisRepositoryProperties {
   private static final int DEFAULT_MAX_IDENTIFIER_LENGTH = 256;
   private static final ZoneId DEFAULT_ZONE_ID = ZoneId.of("UTC");
 
-  // 실제 설정값들
-  private int maxInClauseSize = DEFAULT_MAX_IN_CLAUSE_SIZE;
-  private int maxStringValueLength = DEFAULT_MAX_STRING_VALUE_LENGTH;
-  private int maxIdentifierLength = DEFAULT_MAX_IDENTIFIER_LENGTH;
+  // 실제 설정값들.
+  // zoneId 와 발행 방식이 같다 -- 기동 시 한 스레드가 쓰고 질의 스레드들이 읽으므로, 쓴 값이
+  // 보이도록 volatile 로 둔다. 셋 다 프로그램으로만 바꿀 수 있고 그 호출은 대개 설정 빈에서
+  // 일어나는데, 그 스레드와 질의 스레드 사이에는 happens-before 가 없다.
+  private volatile int maxInClauseSize = DEFAULT_MAX_IN_CLAUSE_SIZE;
+  private volatile int maxStringValueLength = DEFAULT_MAX_STRING_VALUE_LENGTH;
+  private volatile int maxIdentifierLength = DEFAULT_MAX_IDENTIFIER_LENGTH;
 
   // SQL 리터럴로 찍히는 시간 값의 기준 타임존. null 은 "설정하지 않음" 을 뜻하고, 그때는 타입별로
   // 예전과 똑같은 기본값을 쓴다(getZoneId / getDateZoneId 참고). 기동 시 한 번 설정되고 이후에는

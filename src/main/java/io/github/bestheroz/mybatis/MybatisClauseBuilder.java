@@ -148,6 +148,11 @@ public class MybatisClauseBuilder {
       return;
     }
     for (String condition : orderByConditions) {
+      if (condition == null) {
+        // 이 클래스의 다른 잘못된 입력은 모두 MybatisRepositoryException 으로 끝난다.
+        // 여기만 맨 NullPointerException 이 나가면 부르는 쪽이 같은 방식으로 다룰 수 없다.
+        throw new MybatisRepositoryException("orderByConditions contains a null element");
+      }
       if (condition.startsWith("-")) {
         String realCol = condition.substring(1);
         sql.ORDER_BY(entityHelper.getWrappedColumnName(entityClass, realCol) + " DESC");
@@ -300,6 +305,11 @@ public class MybatisClauseBuilder {
       // 숫자와 Boolean은 안전하게 처리.
       // ID 같은 숫자는 문자열 다음으로 흔한데 예전에는 아래 시각/열거형 분기를 모두 지나서야 닿았다.
       // 아래 분기의 타입들(시각, Enum, Collection, Map)은 Number/Boolean 이 될 수 없어 결과는 같다.
+      if (value instanceof Double || value instanceof Float) {
+        // NaN/Infinity 는 toString 이 맨 낱말을 내놓아 `score` = NaN 이 되고, DB 는 이것을 컬럼
+        // 이름으로 읽어 "Unknown column 'NaN'" 을 낸다. 숫자로 적을 방법이 없으니 여기서 끊는다.
+        ensureFiniteNumber((Number) value);
+      }
       return value.toString();
     } else if (value instanceof Instant) {
       return "'" + stringHelper.instantToString((Instant) value, DEFAULT_DATETIME_FORMAT) + "'";
@@ -348,10 +358,47 @@ public class MybatisClauseBuilder {
       return formatMapValue((Map<?, ?>) value);
     }
 
+    // 배열은 toString() 이 신원 해시를 내놓는다. byte[] 컬럼(BLOB/VARBINARY)이 '[B@78e03bb5' 로
+    // 저장되는데도 INSERT 는 성공해서, 값이 망가진 것을 아무도 모르는 채로 지나간다.
+    if (value.getClass().isArray()) {
+      return formatArrayValue(value);
+    }
+
     // 기타 객체는 문자열로 변환 후 이스케이프
     String stringValue = value.toString();
     ensureValueLength(stringValue.length());
     return stringHelper.quoteAndEscape(stringValue);
+  }
+
+  private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
+
+  /**
+   * {@code byte[]} 만 SQL 로 적을 방법이 있다 -- MySQL/MariaDB 의 {@code X'..'} 16진 리터럴이다. 나머지 배열은 원소를 어떤
+   * 모양으로 적어야 하는지 정해진 답이 없으므로, {@code toString()} 의 신원 해시를 조용히 저장하는 대신 예외로 끊는다.
+   */
+  private String formatArrayValue(final Object value) {
+    if (!(value instanceof byte[])) {
+      throw new MybatisRepositoryException(
+          "Unsupported array type for SQL value: " + value.getClass().getName());
+    }
+    final byte[] bytes = (byte[]) value;
+    // X'' 세 글자에 바이트마다 두 글자. 곱을 int 로 하면 큰 배열에서 음수로 뒤집힌다.
+    final long length = (long) bytes.length * 2L + 3L;
+    ensureValueLength((int) Math.min(length, Integer.MAX_VALUE));
+    final StringBuilder sb = new StringBuilder((int) Math.min(length, 1L << 20));
+    sb.append("X'");
+    for (byte b : bytes) {
+      sb.append(HEX_DIGITS[(b >> 4) & 0xF]).append(HEX_DIGITS[b & 0xF]);
+    }
+    return sb.append('\'').toString();
+  }
+
+  /** 숫자로 적을 수 없는 {@code Double}/{@code Float} 값을 걸러 낸다. */
+  private void ensureFiniteNumber(final Number value) {
+    final double d = value.doubleValue();
+    if (Double.isNaN(d) || Double.isInfinite(d)) {
+      throw new MybatisRepositoryException("Value is not a finite number for SQL: " + value);
+    }
   }
 
   /**
@@ -393,46 +440,100 @@ public class MybatisClauseBuilder {
   }
 
   private String formatCollectionValue(final Collection<?> collection) {
-    // 예: '[val1, val2, val3]' 형태
+    // 예: '["val1", "val2", 3]' 형태
     // 스트림 파이프라인과 joining 이 만들던 중간 문자열을 없애고 한 번에 이어 붙인다.
     // 곱을 int 로 계산하면 원소가 아주 많을 때 음수로 뒤집혀 NegativeArraySizeException 이 난다.
     // 초기 크기 힌트일 뿐이므로 long 으로 계산해 상한에서 자른다(배치 인서트와 같은 방식).
-    final StringBuilder sb =
+    final StringBuilder body =
         new StringBuilder((int) Math.min((long) collection.size() * 12L + 4L, 1L << 20));
-    sb.append("'[");
+    appendCollectionBody(body, collection);
+    // 예전에는 원소 하나하나만 길이를 봤기 때문에, 상한 바로 아래 길이의 값을 N개 담으면
+    // 아무 제한 없이 커진 리터럴이 그대로 나갔다. 폭주 방지선은 완성된 리터럴에 걸어야 한다.
+    ensureValueLength(body.length());
+    return stringHelper.quoteAndEscape(body.toString());
+  }
+
+  private void appendCollectionBody(final StringBuilder body, final Collection<?> collection) {
+    body.append('[');
     boolean first = true;
     for (Object element : collection) {
       if (!first) {
-        sb.append(", ");
+        body.append(", ");
       }
       first = false;
-      sb.append(formatValueForSQL(element).replace('\'', '"'));
+      appendEmbeddedValue(body, element);
     }
-    return sb.append("]'").toString();
+    body.append(']');
   }
 
   private String formatMapValue(final Map<?, ?> map) {
-    // 예: "{\"key1\":val1, \"key2\":val2, ...}"
-    // 기본 용량 16 은 JSON 한 조각도 못 담아 매번 재할당된다.
-    StringBuilder sb = new StringBuilder(map.size() * 16 + 8).append("\"{");
+    // 예: '{"key1":"val1", "key2":42}'
+    // 기본 용량 16 은 JSON 한 조각도 못 담아 매번 재할당된다. 곱셈은 형제 메소드들과 같이
+    // long 으로 계산한다 -- 이쪽은 IN 절과 달리 앞단에 개수 상한이 아예 없다.
+    final StringBuilder body =
+        new StringBuilder((int) Math.min((long) map.size() * 16L + 8L, 1L << 20));
+    appendMapBody(body, map);
+    ensureValueLength(body.length());
+    return stringHelper.quoteAndEscape(body.toString());
+  }
+
+  private void appendMapBody(final StringBuilder body, final Map<?, ?> map) {
+    body.append('{');
     boolean first = true;
     for (Map.Entry<?, ?> entry : map.entrySet()) {
       if (!first) {
-        sb.append(", ");
+        body.append(", ");
       }
       first = false;
-      sb.append("\"")
-          .append(stringHelper.escapeSingleQuote(String.valueOf(entry.getKey())))
-          .append("\":");
-
-      Object val = entry.getValue();
-      if (val instanceof String) {
-        sb.append("\"").append(stringHelper.escapeSingleQuote(String.valueOf(val))).append("\"");
-      } else {
-        sb.append(formatValueForSQL(val));
-      }
+      body.append('"').append(String.valueOf(entry.getKey())).append("\":");
+      appendEmbeddedValue(body, entry.getValue());
     }
-    sb.append("}\"");
-    return sb.toString();
+    body.append('}');
+  }
+
+  /**
+   * 컬렉션/맵 본문에 값 하나를 붙인다. <b>여기서는 SQL 이스케이프를 하지 않는다</b> -- 완성된 본문 전체가 마지막에 {@link
+   * MybatisStringHelper#quoteAndEscape} 를 딱 한 번 지나가기 때문이다. 이스케이프를 한 번만 하는 것이 이 메소드의 존재 이유다.
+   *
+   * <p>예전에는 원소마다 이스케이프까지 끝낸 SQL 리터럴을 만든 뒤 작은따옴표를 큰따옴표로 바꿔치웠다({@code
+   * formatValueForSQL(e).replace('\'', '"')}). 그러면 이스케이프로 생긴 {@code ''} 짝이 {@code ""} 가 되어 {@code
+   * O'Brien} 이 {@code O""Brien} 으로 저장됐다. 되돌릴 수 없는 조용한 데이터 손상이다.
+   *
+   * <p>그래서 사용자 텍스트가 들어 있는 {@code String} 과 {@code Enum} 은 날것 그대로 넣는다. 나머지 타입은 숫자·불리언·시각처럼 라이브러리가
+   * 형식을 정하는 값이라 사용자 텍스트가 섞이지 않으므로, 정해진 리터럴을 그대로 쓰고 감싼 따옴표만 바꾼다.
+   */
+  private void appendEmbeddedValue(final StringBuilder body, final Object value) {
+    if (value instanceof String) {
+      final String str = (String) value;
+      body.append('"');
+      // 문자열 원소의 ISO-8601 변환은 예전과 똑같이 유지한다.
+      if (stringHelper.isISO8601String(str)) {
+        final Instant instant = stringHelper.parseIso8601(str);
+        if (instant != null) {
+          body.append(stringHelper.instantToString(instant, DEFAULT_DATETIME_FORMAT)).append('"');
+          return;
+        }
+      }
+      body.append(str).append('"');
+      return;
+    }
+    if (value instanceof Enum) {
+      final Enum<?> enumValue = (Enum<?>) value;
+      final String raw =
+          enumValue instanceof ValueEnum ? ((ValueEnum) enumValue).getValue() : enumValue.name();
+      body.append('"').append(raw).append('"');
+      return;
+    }
+    // 중첩 컨테이너는 본문에 바로 이어 붙인다. formatValueForSQL 로 돌리면 안쪽이 이미 이스케이프를
+    // 끝낸 리터럴을 돌려주고, 바깥에서 한 번 더 이스케이프되어 중첩 배열이 "문자열 하나" 로 뭉개진다.
+    if (value instanceof Collection) {
+      appendCollectionBody(body, (Collection<?>) value);
+      return;
+    }
+    if (value instanceof Map) {
+      appendMapBody(body, (Map<?, ?>) value);
+      return;
+    }
+    body.append(formatValueForSQL(value).replace('\'', '"'));
   }
 }

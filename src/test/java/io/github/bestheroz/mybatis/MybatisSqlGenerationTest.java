@@ -7,7 +7,10 @@ import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import io.github.bestheroz.mybatis.type.ValueEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.Table;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -21,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.apache.ibatis.builder.annotation.ProviderContext;
 import org.apache.ibatis.jdbc.SQL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -757,5 +761,310 @@ class MybatisSqlGenerationTest {
     // then
     assertThat(second).isEqualTo(first);
     assertThat(first).contains("`user_id`").contains("`name`").doesNotContain("not_mapped");
+  }
+
+  // ===========================================
+  // formatValueForSQL 의 Collection / Map / 배열 / 비유한수 분기
+  // (이 분기들은 테스트가 하나도 없었고, Map 은 한 번도 실행 가능한 SQL 을 만든 적이 없다)
+  // ===========================================
+
+  @Test
+  @DisplayName("Map 값은 작은따옴표로 감싼 하나의 유효한 리터럴이어야 한다")
+  void formatValueForSQL_ShouldRenderMapAsSingleValidLiteral() {
+    // given
+    // 예전에는 JSON 구조 따옴표와 SQL 리터럴 구분자를 둘 다 맨 " 로 썼다.
+    //   "{"k1":"v1", "k2":42}"
+    // 첫 안쪽 따옴표에서 리터럴이 끝나 버려 MySQL 은 k1 을 식별자로 읽고 문법 오류를 냈다.
+    // 즉 Map 필드를 JSON 컬럼에 쓰던 소비자는 실행되는 문장을 받은 적이 없다.
+    Map<String, Object> payload = new LinkedHashMap<>();
+    payload.put("k1", "v1");
+    payload.put("k2", 42);
+
+    // when
+    String sql = clauseBuilder.formatValueForSQL(payload);
+
+    // then
+    // 바깥은 작은따옴표 하나, 안쪽 " 는 이스케이프 관문이 \" 로 바꾼다.
+    // DB 가 되돌리면 {"k1":"v1", "k2":42} 로 저장된다.
+    assertThat(sql).isEqualTo("'{\\\"k1\\\":\\\"v1\\\", \\\"k2\\\":42}'");
+    assertThat(sql).startsWith("'").endsWith("'");
+  }
+
+  @Test
+  @DisplayName("Map 과 Collection 안의 작은따옴표는 저장될 때 원래 글자로 돌아와야 한다")
+  void formatValueForSQL_ShouldNotCorruptApostropheInsideCollectionOrMap() {
+    // given
+    // 예전에는 원소마다 SQL 이스케이프를 끝낸 뒤 ' 를 " 로 바꿔치웠다. 그래서 이스케이프로 생긴
+    // '' 짝이 "" 가 되어 O'Brien 이 O""Brien 으로 저장됐다. 되돌릴 수 없는 조용한 손상이다.
+
+    // when
+    String fromCollection = clauseBuilder.formatValueForSQL(Arrays.asList("O'Brien", "plain"));
+    String fromMap = clauseBuilder.formatValueForSQL(Collections.singletonMap("k", "O'Brien"));
+
+    // then
+    // '' 는 작은따옴표 리터럴 안에서 DB 가 ' 하나로 되돌린다.
+    assertThat(fromCollection).isEqualTo("'[\\\"O''Brien\\\", \\\"plain\\\"]'");
+    assertThat(fromMap).isEqualTo("'{\\\"k\\\":\\\"O''Brien\\\"}'");
+    // 망가진 예전 모양이 다시 나오지 않아야 한다
+    assertThat(fromCollection).doesNotContain("O\"\"Brien");
+  }
+
+  @Test
+  @DisplayName("Collection 안의 ValueEnum 도 이스케이프를 두 번 거치지 않아야 한다")
+  void formatValueForSQL_ShouldNotCorruptEnumInsideCollection() {
+    // given
+    // Grade.VIP 의 값은 v'ip 다. String 과 같은 경로로 손상되던 자리다.
+
+    // when
+    String sql = clauseBuilder.formatValueForSQL(Collections.singletonList(Grade.VIP));
+
+    // then
+    assertThat(sql).isEqualTo("'[\\\"v''ip\\\"]'");
+  }
+
+  @Test
+  @DisplayName("중첩된 컬렉션과 맵은 문자열로 뭉개지지 않고 중첩 구조를 유지해야 한다")
+  void formatValueForSQL_ShouldKeepNestedContainersNested() {
+    // given
+    // 중첩 원소를 formatValueForSQL 로 돌리면 안쪽이 이미 이스케이프를 끝낸 리터럴을 돌려주고,
+    // 바깥에서 한 번 더 이스케이프되어 중첩 배열이 "문자열 하나" 로 뭉개진다.
+
+    // when
+    String nestedList =
+        clauseBuilder.formatValueForSQL(Collections.singletonList(Arrays.asList("a", "b")));
+    String nestedMap =
+        clauseBuilder.formatValueForSQL(
+            Collections.singletonMap("k", Collections.singletonMap("in", "v")));
+
+    // then
+    // DB 가 되돌리면 [["a", "b"]] 와 {"k":{"in":"v"}} 가 된다.
+    assertThat(nestedList).isEqualTo("'[[\\\"a\\\", \\\"b\\\"]]'");
+    assertThat(nestedMap).isEqualTo("'{\\\"k\\\":{\\\"in\\\":\\\"v\\\"}}'");
+  }
+
+  @Test
+  @DisplayName("특수문자가 없는 컬렉션은 예전과 같은 값으로 저장되어야 한다")
+  void formatValueForSQL_ShouldKeepPlainCollectionShape() {
+    // given / when
+    String strings = clauseBuilder.formatValueForSQL(Arrays.asList("a", "b"));
+    String numbers = clauseBuilder.formatValueForSQL(Arrays.asList(1, 2));
+
+    // then
+    // 숫자는 글자까지 예전 그대로다. 문자열은 " 가 \" 로 이스케이프되는 것만 달라졌고,
+    // DB 가 되돌리면 예전과 같은 ["a", "b"] 가 저장된다.
+    assertThat(numbers).isEqualTo("'[1, 2]'");
+    assertThat(strings).isEqualTo("'[\\\"a\\\", \\\"b\\\"]'");
+  }
+
+  @Test
+  @DisplayName("byte[] 는 16진 리터럴로, 다른 배열은 예외로 끝나야 한다")
+  void formatValueForSQL_ShouldRenderByteArrayAsHexAndRejectOthers() {
+    // given
+    // 예전에는 배열이 마지막 toString() 분기로 떨어져 '[B@78e03bb5' 같은 신원 해시가 저장됐다.
+    // INSERT 는 성공하므로 값이 망가진 것을 아무도 몰랐다.
+
+    // when / then
+    assertThat(clauseBuilder.formatValueForSQL(new byte[] {1, 2, 3})).isEqualTo("X'010203'");
+    assertThat(clauseBuilder.formatValueForSQL(new byte[] {(byte) 0xFF, 0})).isEqualTo("X'FF00'");
+    assertThat(clauseBuilder.formatValueForSQL(new byte[0])).isEqualTo("X''");
+
+    assertThatThrownBy(() -> clauseBuilder.formatValueForSQL(new int[] {1, 2}))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Unsupported array type");
+  }
+
+  @Test
+  @DisplayName("NaN 과 Infinity 는 맨 낱말로 새어 나가지 말고 거부해야 한다")
+  void formatValueForSQL_ShouldRejectNonFiniteNumbers() {
+    // given
+    // toString() 이 NaN/Infinity 를 그대로 내놓으면 `score` = NaN 이 되고,
+    // DB 는 NaN 을 컬럼 이름으로 읽어 "Unknown column 'NaN'" 을 낸다.
+
+    // when / then
+    assertThatThrownBy(() -> clauseBuilder.formatValueForSQL(Double.NaN))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("not a finite number");
+    assertThatThrownBy(() -> clauseBuilder.formatValueForSQL(Float.NEGATIVE_INFINITY))
+        .isInstanceOf(MybatisRepositoryException.class);
+    // 정상 실수와 정수는 그대로 지나가야 한다
+    assertThat(clauseBuilder.formatValueForSQL(1.5d)).isEqualTo("1.5");
+    assertThat(clauseBuilder.formatValueForSQL(7L)).isEqualTo("7");
+  }
+
+  @Test
+  @DisplayName("길이 상한은 완성된 Collection·Map 리터럴 전체에 걸려야 한다")
+  void formatValueForSQL_ShouldBoundWholeCollectionAndMapLiteral() {
+    // given
+    // 예전에는 Collection 이 원소 하나하나만 검사했고 Map 은 검사를 통째로 건너뛰었다.
+    // 상한 바로 아래 길이의 값을 여러 개 담으면 제한 없이 커진 리터럴이 그대로 나갔다.
+    MybatisRepositoryProperties.getInstance().setMaxStringValueLength(20);
+
+    // when / then
+    assertThatThrownBy(
+            () -> clauseBuilder.formatValueForSQL(Arrays.asList("0123456789", "0123456789")))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Value too long");
+    assertThatThrownBy(
+            () ->
+                clauseBuilder.formatValueForSQL(
+                    Collections.singletonMap("key", "0123456789012345678901234567890")))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Value too long");
+    // 상한 안쪽이면 그대로 만들어져야 한다
+    assertThat(clauseBuilder.formatValueForSQL(Collections.singletonList(1))).isEqualTo("'[1]'");
+  }
+
+  @Test
+  @DisplayName("orderByConditions 의 null 원소는 라이브러리 예외로 끝나야 한다")
+  void appendOrderBy_ShouldRejectNullElement() {
+    // given
+    // 이 클래스의 다른 잘못된 입력은 모두 MybatisRepositoryException 이다.
+    // 여기만 맨 NullPointerException 이 나가면 부르는 쪽이 같은 방식으로 다룰 수 없다.
+
+    // when / then
+    assertThatThrownBy(
+            () ->
+                clauseBuilder.appendOrderBy(new SQL(), Arrays.asList("name", null), TestUser.class))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("null element");
+  }
+
+  // ===========================================
+  // UPDATE SET 규약: 키 없음 = 손대지 않음, 키 있고 값 null = NULL 로 갱신
+  // ===========================================
+
+  @Table(name = "update_target")
+  static class UpdateTarget {
+    @Column(name = "user_id")
+    private Long userId;
+
+    @Column private String name;
+    @Column private String memo;
+  }
+
+  interface UpdateTargetRepository extends MybatisRepository<UpdateTarget> {}
+
+  /**
+   * {@link ProviderContext} 는 생성자가 package-private 이라 테스트에서 {@code new} 로 만들 수 없다. 클래스패스에 있는(=이름 없는
+   * 모듈) 타입이므로 {@code setAccessible} 이 통하고, 이것으로 그동안 직접 부를 수 없던 buildSelectSQL / buildUpdateSQL /
+   * buildDeleteSQL / buildCountSQL 까지 생성된 문장을 그대로 확인할 수 있다.
+   */
+  private static ProviderContext providerContextOf(final Class<?> mapperType) throws Exception {
+    Constructor<ProviderContext> constructor =
+        ProviderContext.class.getDeclaredConstructor(Class.class, Method.class, String.class);
+    constructor.setAccessible(true);
+    return constructor.newInstance(mapperType, mapperType.getMethod("getItems"), null);
+  }
+
+  @Test
+  @DisplayName("updateMap 에 없는 키는 SET 절에서 빠지고, 값이 null 인 키는 NULL 로 갱신해야 한다")
+  void buildUpdateSQL_ShouldOmitAbsentKeysAndAssignNullForNullValues() throws Exception {
+    // given
+    // 이 라이브러리의 부분 수정 규약이다. 키가 아예 없으면 그 컬럼은 문장에 나타나지 않아 기존 값이
+    // 그대로 남고, 키가 있고 값이 null 이면 `컬럼` = null 로 나가 NULL 이 저장된다.
+    // 둘을 한 문장에서 함께 확인해야 "null 이면 건너뛴다" 로 바뀌는 회귀를 잡을 수 있다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    Map<String, Object> where = Collections.singletonMap("userId", 1L);
+
+    Map<String, Object> updateMap = new LinkedHashMap<>();
+    updateMap.put("name", "kim");
+    updateMap.put("memo", null);
+    // userId 는 넣지 않는다 -- 문장에 나오면 안 된다
+
+    // when
+    String sql = command.buildUpdateSQL(context, updateMap, where);
+
+    // then
+    assertThat(sql)
+        .isEqualTo(
+            "UPDATE update_target\nSET `name` = 'kim', `memo` = null\nWHERE (`user_id` = 1)");
+    assertThat(sql).doesNotContain("SET `user_id`");
+  }
+
+  @Test
+  @DisplayName("값이 null 인 키 하나만 있어도 그 컬럼을 NULL 로 갱신해야 한다")
+  void buildUpdateSQL_ShouldAssignNullWhenOnlyNullValuedKeyGiven() throws Exception {
+    // given
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    Map<String, Object> onlyNull = Collections.singletonMap("memo", null);
+
+    // when
+    String sql = command.buildUpdateSQL(context, onlyNull, Collections.singletonMap("userId", 1L));
+
+    // then
+    // 값이 null 이라고 SET 이 통째로 비면 아래 빈 updateMap 가드에 걸려 예외가 났을 것이다.
+    assertThat(sql).isEqualTo("UPDATE update_target\nSET `memo` = null\nWHERE (`user_id` = 1)");
+  }
+
+  @Test
+  @DisplayName("엔티티로 갱신하면 값이 null 인 필드까지 NULL 로 덮어써야 한다")
+  void buildUpdateSQL_ShouldOverwriteNullEntityFieldsWithNull() throws Exception {
+    // given
+    // updateById/updateByMap 은 toMap(entity) 를 그대로 updateMap 으로 넘긴다. toMap 은 @Column 필드를
+    // 값과 무관하게 모두 담으므로, 엔티티 기반 갱신은 부분 수정이 아니라 전체 덮어쓰기다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    UpdateTarget entity = new UpdateTarget();
+    entity.userId = 7L;
+    entity.name = "kim";
+    // memo 는 null 인 채로 둔다
+
+    // when
+    String sql =
+        command.buildUpdateSQL(
+            context, MybatisCommand.toMap(entity), Collections.singletonMap("userId", 1L));
+
+    // then
+    assertThat(sql).contains("`memo` = null").contains("`name` = 'kim'").contains("`user_id` = 7");
+  }
+
+  @Test
+  @DisplayName("updateMap 이 비었거나 null 이면 SET 없는 문장을 만들지 말고 거부해야 한다")
+  void buildUpdateSQL_ShouldRejectEmptyOrNullUpdateMap() throws Exception {
+    // given
+    // 예전에는 빈 맵이면 "UPDATE t WHERE (...)" 가 그대로 DB 로 나가 문법 오류가 났고,
+    // null 이면 entrySet() 에서 맨 NullPointerException 이 나갔다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    Map<String, Object> where = Collections.singletonMap("userId", 1L);
+
+    // when / then
+    assertThatThrownBy(() -> command.buildUpdateSQL(context, new HashMap<>(), where))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("'updateMap' is required");
+    assertThatThrownBy(() -> command.buildUpdateSQL(context, null, where))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("'updateMap' is required");
+  }
+
+  @Test
+  @DisplayName("updateMap 검사보다 whereConditions 검사가 먼저여야 한다")
+  void buildUpdateSQL_ShouldCheckWhereConditionsFirst() throws Exception {
+    // given
+    // 둘 다 비어 있을 때 어느 쪽이 먼저 걸리는지는 안전 규칙의 우선순위다.
+    // WHERE 누락이 전 행 갱신으로 이어지는 쪽이므로 그 메시지가 나가야 한다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+
+    // when / then
+    assertThatThrownBy(() -> command.buildUpdateSQL(context, new HashMap<>(), new HashMap<>()))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("'where' Conditions is required");
+  }
+
+  @Test
+  @DisplayName("updateMap 의 키는 조건 타입 접미사를 받지 않아야 한다")
+  void buildUpdateSQL_ShouldRejectConditionSuffixInUpdateKey() throws Exception {
+    // given
+    // WHERE 의 "필드명:조건타입" 규약은 SET 절에는 없다. 키가 통째로 필드명으로 해석되므로
+    // 접미사가 붙으면 매핑되지 않는 필드로 걸려야 한다(조용히 엉뚱한 컬럼을 쓰면 안 된다).
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+
+    // when / then
+    assertThatThrownBy(
+            () ->
+                command.buildUpdateSQL(
+                    context,
+                    Collections.singletonMap("name:eq", "kim"),
+                    Collections.singletonMap("userId", 1L)))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("entity 에 포함되지 않는 필드");
   }
 }

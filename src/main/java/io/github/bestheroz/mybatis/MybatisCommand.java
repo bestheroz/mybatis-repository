@@ -299,6 +299,13 @@ public class MybatisCommand {
     if (whereConditions == null || whereConditions.isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for update");
     }
+    // SET 절이 하나도 없으면 MyBatis 는 "UPDATE t WHERE (...)" 를 만든다. SET 이 빠진 문장은 어느 DB 도
+    // 받지 않으므로 DB 까지 보내 문법 오류를 받을 이유가 없다. null 은 여기까지 오면 아래 entrySet()
+    // 에서 맨 NPE 가 나가던 자리라, 다른 입력 검증과 같은 예외로 맞춘다.
+    // 값이 null 인 키는 여기서 걸러지지 않는다 -- 키가 있으면 `컬럼` = null 로 나가는 것이 규약이다.
+    if (updateMap == null || updateMap.isEmpty()) {
+      throw new MybatisRepositoryException("'updateMap' is required for update");
+    }
     Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
       throw new MybatisRepositoryException(

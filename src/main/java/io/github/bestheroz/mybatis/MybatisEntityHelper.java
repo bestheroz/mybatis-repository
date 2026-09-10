@@ -34,6 +34,10 @@ public class MybatisEntityHelper {
    * CamelCase→snake_case 로 변환
    */
   protected String getTableName(final Class<?> entityClass) {
+    final String cached = MybatisCommand.TABLE_NAME_CACHE.get(entityClass);
+    if (cached != null) {
+      return cached;
+    }
     return MybatisCommand.TABLE_NAME_CACHE.computeIfAbsent(
         entityClass,
         clazz -> {
@@ -72,6 +76,10 @@ public class MybatisEntityHelper {
    * <p>필드 목록 자체는 이미 캐시되어 있었지만 이름 집합은 부를 때마다 새로 만들고 있었다. 전체 컬럼 SELECT 와 배치 인서트가 질의마다 거치는 자리다.
    */
   protected Set<String> getEntityFields(final Class<?> entityClass) {
+    final Set<String> cached = MybatisCommand.FIELD_NAME_CACHE.get(entityClass);
+    if (cached != null) {
+      return cached;
+    }
     return MybatisCommand.FIELD_NAME_CACHE.computeIfAbsent(
         entityClass,
         clazz ->
@@ -91,6 +99,10 @@ public class MybatisEntityHelper {
    * <p>같은 이름의 필드가 상위 클래스에도 있으면 {@code toMap} 의 {@code put} 과 똑같이 뒤에 오는 것(상위 클래스 쪽)이 이긴다.
    */
   protected List<Field> getEntityFieldsInOrder(final Class<?> entityClass) {
+    final List<Field> cached = MybatisCommand.ORDERED_FIELD_CACHE.get(entityClass);
+    if (cached != null) {
+      return cached;
+    }
     return MybatisCommand.ORDERED_FIELD_CACHE.computeIfAbsent(
         entityClass,
         clazz -> {
@@ -123,6 +135,10 @@ public class MybatisEntityHelper {
    * 목록에 SELECT 와 INSERT 의 차이가 없으므로 이름과 달리 이 캐시가 두 경로를 함께 덮는다.
    */
   protected String getSelectColumnList(final Class<?> entityClass) {
+    final String cached = MybatisCommand.SELECT_COLUMNS_CACHE.get(entityClass);
+    if (cached != null) {
+      return cached;
+    }
     return MybatisCommand.SELECT_COLUMNS_CACHE.computeIfAbsent(
         entityClass,
         clazz -> {
@@ -152,9 +168,14 @@ public class MybatisEntityHelper {
     if (entityClass == null) {
       return stringHelper.wrapIdentifier(getColumnName(null, fieldName));
     }
-    final Map<String, String> byFieldName =
-        MybatisCommand.WRAPPED_COLUMN_CACHE.computeIfAbsent(
-            entityClass, clazz -> new ConcurrentHashMap<>());
+    // 바깥 맵도 적중 경로를 get 으로 먼저 본다. 여기가 가장 뜨거운 자리다 --
+    // 20컬럼 인서트/업데이트 한 번이면 이 줄만 20번 지난다.
+    Map<String, String> byFieldName = MybatisCommand.WRAPPED_COLUMN_CACHE.get(entityClass);
+    if (byFieldName == null) {
+      byFieldName =
+          MybatisCommand.WRAPPED_COLUMN_CACHE.computeIfAbsent(
+              entityClass, clazz -> new ConcurrentHashMap<>());
+    }
     final String cached = byFieldName.get(fieldName);
     if (cached != null) {
       return cached;
@@ -170,6 +191,10 @@ public class MybatisEntityHelper {
    * <p>- jakarta.persistence.Column 또는 javax.persistence.Column 둘 다 처리 - 없으면 빈 배열 반환
    */
   protected static List<Field> getAllNonExcludedFields(final Class<?> clazz) {
+    final List<Field> cached = MybatisCommand.FIELD_CACHE.get(clazz);
+    if (cached != null) {
+      return cached;
+    }
     return MybatisCommand.FIELD_CACHE.computeIfAbsent(
         clazz,
         entityClass -> {
@@ -222,9 +247,14 @@ public class MybatisEntityHelper {
     if (entityClass == null) {
       return resolveColumnName(null, fieldName);
     }
-    final Map<String, String> byFieldName =
-        MybatisCommand.COLUMN_NAME_CACHE.computeIfAbsent(
-            entityClass, clazz -> new ConcurrentHashMap<>());
+    // 바깥 맵도 적중 경로를 get 으로 먼저 본다. 여기가 가장 뜨거운 자리다 --
+    // 20컬럼 인서트/업데이트 한 번이면 이 줄만 20번 지난다.
+    Map<String, String> byFieldName = MybatisCommand.COLUMN_NAME_CACHE.get(entityClass);
+    if (byFieldName == null) {
+      byFieldName =
+          MybatisCommand.COLUMN_NAME_CACHE.computeIfAbsent(
+              entityClass, clazz -> new ConcurrentHashMap<>());
+    }
     final String cached = byFieldName.get(fieldName);
     if (cached != null) {
       return cached;
@@ -264,7 +294,9 @@ public class MybatisEntityHelper {
     }
     log.error("entity 에 포함되지 않는 필드 발견 : {}", fieldName);
     // 보안상 프로덕션 환경에서는 상세 정보 노출 방지
-    if (log.isDebugEnabled()) {
+    if (entityClass != null && log.isDebugEnabled()) {
+      // getAllNonExcludedFields(null) 은 computeIfAbsent(null, ..) 로 NPE 가 난다. 그러면
+      // 바로 아래 MybatisRepositoryException 이 로그 레벨에 따라 다른 예외로 바뀐다.
       log.debug(
           "entity 필드 목록: {}",
           getAllNonExcludedFields(entityClass).stream()
