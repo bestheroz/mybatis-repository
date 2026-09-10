@@ -346,8 +346,12 @@ public class MybatisEntityHelper {
     for (Type t : genericIfs) {
       if (t instanceof ParameterizedType) {
         ParameterizedType pt = (ParameterizedType) t;
-        if (pt.getRawType() == MybatisRepository.class
-            || pt.getRawType() == MybatisNoIdRepository.class) {
+        // 두 저장소 인터페이스가 공유하는 부분은 MybatisRepositoryBase 로 내려갔다. 소비자가 insert 없이
+        // 조회/수정/삭제만 필요해 그 타입을 바로 확장하는 것도 정상적인 사용이므로 함께 받는다.
+        final Type raw = pt.getRawType();
+        if (raw == MybatisRepository.class
+            || raw == MybatisNoIdRepository.class
+            || raw == MybatisRepositoryBase.class) {
           Type actual = pt.getActualTypeArguments()[0];
           if (actual instanceof Class) {
             return (Class<E>) actual;

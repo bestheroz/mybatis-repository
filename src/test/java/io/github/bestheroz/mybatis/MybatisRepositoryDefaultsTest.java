@@ -21,12 +21,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link MybatisRepository} 와 {@link MybatisNoIdRepository} 의 {@code default} 메소드 37개는 그동안 한 줄도
- * 실행되지 않았다(두 인터페이스 합쳐 292줄, 라인 커버리지 0%). SQL 을 만들지 않고 7개 프로바이더 메소드로 넘기기만 하는 얇은 껍데기지만, 넘기면서 빈 컬렉션을
- * 채우고 null 을 정규화하므로 인자 자리가 뒤바뀌거나 null 가드가 빠져도 아무 테스트도 깨지지 않았다.
+ * {@code default} 메소드 37개는 그동안 한 줄도 실행되지 않았다(라인 커버리지 0%). SQL 을 만들지 않고 7개 프로바이더 메소드로 넘기기만 하는 얇은
+ * 껍데기지만, 넘기면서 빈 컬렉션을 채우고 null 을 정규화하므로 인자 자리가 뒤바뀌거나 null 가드가 빠져도 아무 테스트도 깨지지 않았다.
  *
- * <p>두 인터페이스는 insert 두 곳의 {@code @Options} 를 빼면 글자까지 같아야 한다. CLAUDE.md 는 "한쪽을 고치면 반드시 다른 쪽도 고치고
- * diff 로 확인하라" 고 적어 두었는데, 여기서 같은 호출을 양쪽에 걸어 기록된 인자를 맞대어 보면 그 diff 를 테스트가 대신 한다.
+ * <p>예전에는 이 껍데기가 {@link MybatisRepository} 와 {@link MybatisNoIdRepository} 에 통째로 두 벌 있었고, 이 테스트는 두
+ * 벌이 어긋나지 않았는지 맞대어 보는 것이 주된 일이었다. 지금은 35개가 {@link MybatisRepositoryBase} 한 곳에 있어 어긋날 자리가 없고, 각
+ * 인터페이스에 남은 것은 insert 껍데기 두 개뿐이다. 맞대어 보기는 그 두 개를 지키는 일로 좁아졌고, 대신 껍데기 37개를 실제로 실행해 인자 자리와 null 정규화를
+ * 확인하는 역할이 남는다.
+ *
+ * <p>{@link #sharedDefaults_ShouldBeDeclaredOnceOnTheBaseInterface} 는 그 구조 자체를 못박는다 -- 누군가 공용 껍데기를
+ * 하위 인터페이스로 다시 복사해 오면 거기서 걸린다.
  */
 class MybatisRepositoryDefaultsTest {
 
@@ -227,14 +231,13 @@ class MybatisRepositoryDefaultsTest {
     return args;
   }
 
-  /** {@code default} 로 선언된, 즉 실제로 검사할 메소드만 이름 순으로 모은다. */
+  /**
+   * {@code default} 로 선언된, 즉 실제로 검사할 메소드만 이름 순으로 모은다. 공용 껍데기가 {@link MybatisRepositoryBase} 로
+   * 내려갔으므로 상위 인터페이스까지 함께 훑는다 -- 소비자가 매퍼에서 실제로 부를 수 있는 껍데기 전부가 대상이다.
+   */
   private static List<Method> defaultMethodsOf(final Class<?> repositoryInterface) {
     final List<Method> methods = new ArrayList<>();
-    for (Method method : repositoryInterface.getDeclaredMethods()) {
-      if (method.isDefault()) {
-        methods.add(method);
-      }
-    }
+    collectDefaultMethods(repositoryInterface, methods);
     methods.sort(
         (left, right) -> {
           final int byName = left.getName().compareTo(right.getName());
@@ -243,12 +246,46 @@ class MybatisRepositoryDefaultsTest {
     return methods;
   }
 
+  private static void collectDefaultMethods(final Class<?> type, final List<Method> into) {
+    for (Method method : type.getDeclaredMethods()) {
+      if (method.isDefault()) {
+        into.add(method);
+      }
+    }
+    for (Class<?> parent : type.getInterfaces()) {
+      collectDefaultMethods(parent, into);
+    }
+  }
+
+  @Test
+  @DisplayName("공용 껍데기는 상위 인터페이스에만 선언되어야 한다")
+  void sharedDefaults_ShouldBeDeclaredOnceOnTheBaseInterface() {
+    // given / when / then
+    // 두 인터페이스에 남아도 되는 껍데기는 insert 두 개뿐이다. 나머지가 여기 다시 나타나면
+    // 838줄을 한 곳으로 모은 것이 원상복구되는 중이라는 뜻이다.
+    assertThat(declaredDefaultNamesOf(MybatisRepository.class))
+        .containsExactlyInAnyOrder("insert", "insertBatch");
+    assertThat(declaredDefaultNamesOf(MybatisNoIdRepository.class))
+        .containsExactlyInAnyOrder("insert", "insertBatch");
+    assertThat(declaredDefaultNamesOf(MybatisRepositoryBase.class)).hasSize(35);
+  }
+
+  private static Set<String> declaredDefaultNamesOf(final Class<?> repositoryInterface) {
+    final Set<String> names = new TreeSet<>();
+    for (Method method : repositoryInterface.getDeclaredMethods()) {
+      if (method.isDefault()) {
+        names.add(method.getName());
+      }
+    }
+    return names;
+  }
+
   @Test
   @DisplayName("두 저장소 인터페이스의 default 메소드는 같은 프로바이더 호출로 이어져야 한다")
   void defaultMethods_ShouldDelegateIdenticallyInBothInterfaces() throws Exception {
     // given
-    // insert 두 곳의 @Options 를 빼면 두 인터페이스는 같아야 한다. 한쪽만 고치는 실수를
-    // diff 대신 여기서 잡는다.
+    // 35개는 공용 상위 인터페이스에서 오고 2개는 각자 선언한 insert 껍데기다. 어느 쪽으로 부르든
+    // 같은 프로바이더 호출로 이어져야 한다.
     List<Method> idMethods = defaultMethodsOf(MybatisRepository.class);
     List<Method> noIdMethods = defaultMethodsOf(MybatisNoIdRepository.class);
 

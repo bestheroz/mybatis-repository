@@ -12,8 +12,11 @@ import org.slf4j.LoggerFactory;
 public class MybatisClauseBuilder {
   private static final Logger log = LoggerFactory.getLogger(MybatisClauseBuilder.class);
 
-  // 상수 정의
-  private static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
+  // 상수 정의.
+  // 날짜시각 패턴은 MybatisStringHelper 의 것을 그대로 쓴다. 같은 값을 두 벌 적어 두면
+  // instantToString 안의 formatterOf 가 "미리 만들어 둔 포매터" 를 고르는 판정(패턴 문자열 비교)이
+  // 한쪽만 고치는 순간 조용히 빗나가, 값 하나마다 DateTimeFormatter 를 새로 만들게 된다.
+  private static final String DEFAULT_DATETIME_FORMAT = MybatisStringHelper.DEFAULT_DATETIME_FORMAT;
   private static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
   private static final String DEFAULT_TIME_FORMAT = "HH:mm:ss";
 
@@ -83,12 +86,39 @@ public class MybatisClauseBuilder {
     return appended;
   }
 
+  /** MyBatis 가 ParamMap 안에 사용자의 조건 맵을 담아 두는 키. */
+  private static final String WHERE_CONDITIONS_KEY = "whereConditions";
+
+  /**
+   * 프로바이더가 받은 맵에서 실제 조건 맵을 되찾는다.
+   *
+   * <p>인자가 하나뿐인 프로바이더({@code buildSelectOneSQL}/{@code buildCountSQL}/{@code buildDeleteSQL})에
+   * MyBatis 는 사용자가 넘긴 맵이 아니라 {@code ParamMap} 전체를 넘긴다. 즉 여기 들어오는 맵은 보통 {@code {context=null,
+   * whereConditions={...}, param1=null, param2={...}}} 이고, 조건 맵은 그 안에 있다.
+   *
+   * <p>{@code ParamMap#get} 은 없는 키에 {@code null} 이 아니라 {@code BindingException} 을 던지므로 {@code
+   * containsKey} 로 먼저 본다.
+   */
   @SuppressWarnings("unchecked") // 조건 맵의 값 타입은 프로토콜상 호출부가 보장한다
-  private Map<String, Object> extractWhereConditions(Map<String, Object> params) {
-    Object whereConditions = params.get("whereConditions");
+  protected Map<String, Object> extractWhereConditions(final Map<String, Object> params) {
+    if (params == null) {
+      return Collections.emptyMap();
+    }
+    if (!params.containsKey(WHERE_CONDITIONS_KEY)) {
+      return params;
+    }
+    final Object whereConditions = params.get(WHERE_CONDITIONS_KEY);
     if (whereConditions instanceof Map) {
       return (Map<String, Object>) whereConditions;
     }
+    if (whereConditions == null) {
+      // 소비자가 조건 맵 자리에 null 을 넘긴 경우다(getItemByMap(null) 등). 예전에는 ParamMap 을
+      // 통째로 조건 맵으로 되돌려 주어 context/param1/param2 를 필드 이름으로 찾다가
+      // "entity 에 포함되지 않는 필드 발견 : context" 라는, 원인을 알 수 없는 예외로 끝났다.
+      return Collections.emptyMap();
+    }
+    // 키는 있는데 맵도 null 도 아니면 ParamMap 이 아니라 사용자의 조건 맵이고, whereConditions 라는
+    // 이름의 필드를 거르려는 것이다. 예전 동작을 그대로 둔다.
     return params;
   }
 

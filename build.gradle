@@ -32,6 +32,21 @@ java {
 // --release 8 을 써야 Java 8 API 로 컴파일 시점에 검증된다.
 tasks.withType(JavaCompile).configureEach {
     options.release.set(8)
+
+    // -parameters 는 이 라이브러리가 동작하기 위한 필수 조건이다. 편의 옵션이 아니다.
+    // MyBatis 는 인자가 하나뿐인 프로바이더(buildSelectOneSQL/buildCountSQL/buildDeleteSQL)에
+    // 사용자가 넘긴 맵이 아니라 ParamMap 전체를 넘기고, MybatisClauseBuilder 는 거기서
+    // "whereConditions" 키를 꺼내 조건 맵을 되찾는다. 그 키 이름은 배포되는 jar 의
+    // MethodParameters 속성에서 나온다. 속성이 없으면 키가 arg0/arg1 이 되고,
+    // ParamMap#get 은 없는 키에 null 대신 BindingException 을 던지므로
+    // getItemById/getItemByMap/countAll/countByMap/deleteById/deleteByMap 여섯 개가
+    // 소비자 쪽에서 "Parameter 'whereConditions' not found" 로 죽는다.
+    //
+    // 지금까지는 org.springframework.boot 플러그인이 모든 JavaCompile 에 이 옵션을 얹어 주어
+    // 우연히 지켜지고 있었다. 그 플러그인은 라이브러리에 잘못 붙어 있는 것이라 언젠가 떼어 낼
+    // 후보이므로(그래서 ./gradlew build 가 아니라 check jar 를 쓴다), 여기서 직접 건다.
+    // MybatisParameterNameTest 가 이 속성이 살아 있는지 확인한다.
+    options.compilerArgs << '-parameters'
 }
 
 repositories {

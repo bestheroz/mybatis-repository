@@ -106,7 +106,9 @@ public class MybatisRepositoryProperties {
    */
   public void setTimezone(String timezone) {
     if (timezone == null || timezone.trim().isEmpty()) {
-      throw new IllegalArgumentException("timezone must not be empty");
+      // 바로 아래 "알 수 없는 존" 분기와 같은 예외로 맞춘다. 같은 메소드의 두 실패가 서로 다른
+      // 계열이면 부르는 쪽이 둘 다 잡으려고 RuntimeException 까지 넓히게 된다.
+      throw new MybatisRepositoryException("timezone must not be empty");
     }
     try {
       setZoneId(ZoneId.of(timezone.trim()));

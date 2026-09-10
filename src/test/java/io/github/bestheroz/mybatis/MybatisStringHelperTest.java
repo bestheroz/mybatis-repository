@@ -398,30 +398,32 @@ class MybatisStringHelperTest {
   @DisplayName("식별자 검증은 허용 문자와 SQL 키워드 규칙을 그대로 지켜야 한다")
   void wrapIdentifier_ShouldKeepValidationRules() {
     // given / when / then
+    // 이 자리는 평범한 엔티티로도 닿는다 -- @Column(name = "left") 하나면 getItems() 가 여기서 끝난다.
+    // 그래서 맨 IllegalArgumentException 이 아니라 라이브러리 공통 예외로 나가야 한다.
     assertThat(helper.wrapIdentifier("user_id")).isEqualTo("`user_id`");
     assertThat(helper.wrapIdentifier("a1")).isEqualTo("`a1`");
 
     // 알파벳으로 시작하지 않거나 허용되지 않는 문자가 섞이면 거부
     assertThatThrownBy(() -> helper.wrapIdentifier("1abc"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("_abc"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("a-b"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("a b"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("a`b"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("가나다"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
 
     // SQL 키워드는 대소문자를 가리지 않고 차단
     assertThatThrownBy(() -> helper.wrapIdentifier("SELECT"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("select"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
     assertThatThrownBy(() -> helper.wrapIdentifier("SeLeCt"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(MybatisRepositoryException.class);
   }
 
   @Test

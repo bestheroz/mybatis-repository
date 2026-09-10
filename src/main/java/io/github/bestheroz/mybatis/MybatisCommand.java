@@ -89,6 +89,26 @@ public class MybatisCommand {
     return rendered;
   }
 
+  /**
+   * 완성될 크기를 미리 잡아 둔 버퍼에 SQL 을 써 넣는다.
+   *
+   * <p>{@code AbstractSQL#toString} 은 {@code new StringBuilder()} 로 시작한다. 기본 용량이 16 이라 배치 인서트처럼 문장이
+   * 큰 경우(1000행 x 20컬럼이면 300 KB를 넘는다) 버퍼가 스무 번 가까이 두 배로 늘어나며, 그때마다 지금까지 쓴 내용을 통째로 새 배열에 옮긴다. 결과적으로
+   * 최종 크기의 두 배쯤을 복사하고 그만큼의 배열을 버린다.
+   *
+   * <p>{@code usingAppender} 는 {@code toString} 이 쓰는 것과 같은 {@code sql(Appendable)} 경로를 그대로 돌리므로
+   * 만들어지는 문자열이 글자까지 같다. 크기 힌트만 미리 주는 것이라 정확하지 않아도 정확성에는 영향이 없다.
+   *
+   * <p>{@code usingAppender} 는 mybatis 3.4.0 부터 있다(javap 으로 확인). 이 경로는 {@code ADD_ROW()} 때문에 이미
+   * 3.5.2 를 요구하므로 하한이 새로 생기지는 않는다.
+   */
+  private static String renderPreSized(final SQL sql, final long estimatedLength) {
+    // 행 길이를 실제로 세어 만든 값이라 터무니없는 크기가 나올 수 없다. int 를 넘기는 문장은
+    // 어차피 toString 에서 끝나므로 여기서 자르기만 한다.
+    final int capacity = (int) Math.min(Math.max(estimatedLength, 16L), Integer.MAX_VALUE);
+    return sql.usingAppender(new StringBuilder(capacity)).toString();
+  }
+
   private static void logSql(final String label, final String rendered) {
     if (log.isDebugEnabled()) {
       log.debug("{} SQL: {}", label, rendered.replace('\n', ' '));
@@ -132,7 +152,14 @@ public class MybatisCommand {
   // 2) SELECT ONE (Optional<T>)
   // ===========================================
   public String buildSelectOneSQL(ProviderContext context, Map<String, Object> whereConditions) {
-    if (whereConditions == null || whereConditions.isEmpty()) {
+    // 껍질을 벗긴 뒤에 검사한다. MyBatis 는 인자가 하나뿐인 프로바이더에 사용자가 넘긴 맵이 아니라
+    // ParamMap 전체를 넘기므로, 여기서 whereConditions.isEmpty() 를 보면 언제나 false 였다.
+    // 즉 이 가드는 프로바이더로 불릴 때 한 번도 걸린 적이 없고, getItemByMap(emptyMap) 은
+    // WHERE 가 없는 SELECT 로 나갔다 -- 돌려받을 자리가 Optional 하나뿐인데 테이블 전체를 읽고,
+    // 두 행 이상이면 TooManyResultsException 으로 끝난다.
+    // update/delete 는 뒤에 ensureWhereClause 라는 두 번째 그물이 있어 살아남았지만
+    // 이 경로에는 그것이 없어 이 검사가 유일한 방어선이다.
+    if (clauseBuilder.extractWhereConditions(whereConditions).isEmpty()) {
       throw new MybatisRepositoryException("'where' Conditions is required for getItemByMap");
     }
     return buildSelectSQL(context, EMPTY_SET, EMPTY_SET, whereConditions, EMPTY_LIST, null, null);
@@ -168,6 +195,22 @@ public class MybatisCommand {
     clauseBuilder.appendOrderBy(sql, orderByConditions, entityClass);
 
     // LIMIT / OFFSET
+    // 두 값을 그대로 흘려보내면 데이터베이스가 받지 않는 문장이 조용히 만들어진다. ADD_ROW 이전의
+    // 배치 인서트, 그리고 Map 리터럴의 따옴표와 같은 모양의 문제다 -- 실행해 보기 전에는 아무도 모른다.
+    //   getItemsLimitOffset(null, 20) -> "... FROM t OFFSET 20"
+    //   MySQL/MariaDB 의 OFFSET 은 LIMIT 의 일부라서 혼자서는 문법 오류다.
+    //   getItemsLimitOffset(-5, -1)   -> "... LIMIT -5 OFFSET -1" 역시 문법 오류.
+    // 어느 쪽도 조용히 고쳐 줄 올바른 해석이 없으므로 다른 입력 검증과 같은 자리에서 끊는다.
+    // 0 은 막지 않는다 -- LIMIT 0 도 OFFSET 0 도 정상적인 문장이다.
+    if (limit != null && limit < 0) {
+      throw new MybatisRepositoryException("limit must not be negative: " + limit);
+    }
+    if (offset != null && offset < 0) {
+      throw new MybatisRepositoryException("offset must not be negative: " + offset);
+    }
+    if (offset != null && limit == null) {
+      throw new MybatisRepositoryException("offset requires limit: offset=" + offset);
+    }
     if (limit != null) {
       sql.LIMIT(limit);
     }
@@ -247,6 +290,8 @@ public class MybatisCommand {
     // 그 순서에 맞춰 둔 Field 목록에서 곧바로 읽는다(1000행 x 20컬럼이면 Map 1000개가 사라진다).
     final List<Field> orderedFields = entityHelper.getEntityFieldsInOrder(expectedType);
     final StringBuilder row = new StringBuilder(orderedFields.size() * 16);
+    // 완성될 문장의 길이를 행을 만들면서 함께 세어 둔다. 아래 렌더링에 쓸 크기 힌트다.
+    long renderedLength = 64L + tableName.length();
     boolean firstRow = true;
     for (T entity : entities) {
       if (!firstRow) {
@@ -262,10 +307,14 @@ public class MybatisCommand {
         firstColumn = false;
         row.append(clauseBuilder.formatValueForSQL(readFieldValue(field, entity)));
       }
+      // 행 하나가 차지하는 자리: 값들 + 감싸는 괄호 둘 + 행 구분자 "\n, ".
+      renderedLength += row.length() + 8L;
       sql.INTO_VALUES(row.toString());
     }
 
-    return renderAndLog(sql, "insertBatch");
+    final String rendered = renderPreSized(sql, renderedLength);
+    logSql("insertBatch", rendered);
+    return rendered;
   }
 
   /**

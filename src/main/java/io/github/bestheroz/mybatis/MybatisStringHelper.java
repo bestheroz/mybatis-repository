@@ -1,5 +1,6 @@
 package io.github.bestheroz.mybatis;
 
+import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Instant;
@@ -319,13 +320,21 @@ public class MybatisStringHelper {
     }
   }
 
+  /**
+   * 식별자를 백틱으로 감싼다. 규칙을 어기면 {@link MybatisRepositoryException} 으로 끝난다.
+   *
+   * <p>예전에는 맨 {@link IllegalArgumentException} 이었다. 이 자리는 이상한 입력이 아니라 평범한 엔티티로도 닿는다 --
+   * {@code @Column(name = "left")} 하나면 {@code getItems()} 가 거기서 끝난다(left 는 키워드 차단 목록에 있다). 그런데
+   * 라이브러리의 다른 입력 검증은 모두 {@code MybatisRepositoryException} 이라, 소비자가 이 계열을 한자리에서 잡을 수 없었다. {@code
+   * appendOrderBy} 의 null 원소를 맨 NPE 에서 바꾼 것과 같은 이유다.
+   */
   protected String wrapIdentifier(final String identifier) {
     if (identifier == null || identifier.isEmpty()) {
-      throw new IllegalArgumentException("Identifier cannot be null or empty");
+      throw new MybatisRepositoryException("Identifier cannot be null or empty");
     }
     // SQL injection 방지를 위한 식별자 검증
     if (!isValidIdentifier(identifier)) {
-      throw new IllegalArgumentException("Invalid identifier: " + identifier);
+      throw new MybatisRepositoryException("Invalid identifier: " + identifier);
     }
     // DBMS마다 다를 수 있으나, 예시로 백틱(`)을 사용
     return "`" + identifier + "`";

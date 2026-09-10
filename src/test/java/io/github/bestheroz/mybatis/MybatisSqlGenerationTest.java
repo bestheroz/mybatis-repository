@@ -949,6 +949,51 @@ class MybatisSqlGenerationTest {
    * 모듈) 타입이므로 {@code setAccessible} 이 통하고, 이것으로 그동안 직접 부를 수 없던 buildSelectSQL / buildUpdateSQL /
    * buildDeleteSQL / buildCountSQL 까지 생성된 문장을 그대로 확인할 수 있다.
    */
+  @Test
+  @DisplayName("LIMIT/OFFSET 은 데이터베이스가 받는 모양만 만들어야 한다")
+  void buildSelectSQL_ShouldRejectPagingValuesMysqlRefuses() throws Exception {
+    // given
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    MybatisCommand command = new MybatisCommand();
+
+    // when / then
+    // OFFSET 은 MySQL/MariaDB 에서 LIMIT 의 일부라 혼자 나가면 문법 오류다.
+    // 예전에는 "... FROM update_target OFFSET 20" 이 조용히 만들어졌다.
+    assertThatThrownBy(() -> selectWithPaging(command, context, null, 20))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("offset requires limit");
+
+    // 음수도 마찬가지로 실행되지 않는 문장이 된다("... LIMIT -5 OFFSET -1").
+    assertThatThrownBy(() -> selectWithPaging(command, context, -5, null))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("limit must not be negative");
+    assertThatThrownBy(() -> selectWithPaging(command, context, 10, -1))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("offset must not be negative");
+
+    // 0 은 막지 않는다. LIMIT 0 도 OFFSET 0 도 정상적인 문장이라 가드가 여기까지 넓어지면 안 된다.
+    assertThat(selectWithPaging(command, context, 0, 0).replace('\n', ' '))
+        .isEqualTo("SELECT `name`, `memo`, `user_id` FROM update_target LIMIT 0 OFFSET 0");
+    // 페이징을 아예 주지 않는 경로도 그대로여야 한다.
+    assertThat(selectWithPaging(command, context, null, null).replace('\n', ' '))
+        .isEqualTo("SELECT `name`, `memo`, `user_id` FROM update_target");
+  }
+
+  private static String selectWithPaging(
+      final MybatisCommand command,
+      final ProviderContext context,
+      final Integer limit,
+      final Integer offset) {
+    return command.buildSelectSQL(
+        context,
+        Collections.emptySet(),
+        Collections.emptySet(),
+        Collections.emptyMap(),
+        Collections.emptyList(),
+        limit,
+        offset);
+  }
+
   private static ProviderContext providerContextOf(final Class<?> mapperType) throws Exception {
     Constructor<ProviderContext> constructor =
         ProviderContext.class.getDeclaredConstructor(Class.class, Method.class, String.class);
