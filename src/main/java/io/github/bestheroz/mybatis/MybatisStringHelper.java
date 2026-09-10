@@ -4,7 +4,6 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
@@ -14,7 +13,16 @@ import java.util.Set;
 public class MybatisStringHelper {
   private static final String SEPARATOR = ":";
 
-  public MybatisStringHelper() {}
+  // 설정 가능한 값들을 위한 Properties 참조
+  private final MybatisRepositoryProperties properties;
+
+  public MybatisStringHelper() {
+    this(MybatisRepositoryProperties.getInstance());
+  }
+
+  public MybatisStringHelper(MybatisRepositoryProperties properties) {
+    this.properties = properties != null ? properties : MybatisRepositoryProperties.getInstance();
+  }
 
   protected String escapeSingleQuote(String src) {
     if (src == null) {
@@ -107,7 +115,7 @@ public class MybatisStringHelper {
   }
 
   protected String instantToString(final Instant instant, final String pattern) {
-    return OffsetDateTime.ofInstant(instant, ZoneId.of("UTC"))
+    return OffsetDateTime.ofInstant(instant, properties.getZoneId())
         .format(DateTimeFormatter.ofPattern(pattern));
   }
 
@@ -250,7 +258,7 @@ public class MybatisStringHelper {
     }
 
     // 길이 제한 (SQL 식별자 최대 길이)
-    if (identifier.length() > MybatisRepositoryProperties.getInstance().getMaxIdentifierLength()) {
+    if (identifier.length() > properties.getMaxIdentifierLength()) {
       return false;
     }
 

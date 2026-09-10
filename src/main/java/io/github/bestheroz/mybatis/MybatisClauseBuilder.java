@@ -215,7 +215,7 @@ public class MybatisClauseBuilder {
       return "'" + stringHelper.instantToString((Instant) value, DEFAULT_DATETIME_FORMAT) + "'";
     } else if (value instanceof Date) {
       return "'"
-          + ((Date) value).toInstant().atZone(ZoneId.systemDefault()).format(DATETIME_FORMATTER)
+          + ((Date) value).toInstant().atZone(properties.getDateZoneId()).format(DATETIME_FORMATTER)
           + "'";
     } else if (value instanceof LocalDateTime) {
       return "'" + ((LocalDateTime) value).format(DATETIME_FORMATTER) + "'";

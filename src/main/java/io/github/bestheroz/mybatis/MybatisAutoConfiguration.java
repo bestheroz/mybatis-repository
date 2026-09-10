@@ -9,14 +9,24 @@ import org.springframework.context.annotation.Configuration;
 public class MybatisAutoConfiguration {
   private static final Logger log = LoggerFactory.getLogger(MybatisAutoConfiguration.class);
 
+  /**
+   * 준비 완료 메시지. 타임존은 {@link MybatisEnvironmentPostProcessor} 가 refresh 전에 이미 반영해 두므로, 여기서는 실제 적용된 값을
+   * 확인용으로 함께 남긴다.
+   */
+  private static String readyMessage(final String bootVersion) {
+    return "Ready to use MybatisRepository ("
+        + bootVersion
+        + "), datetime literals in "
+        + MybatisRepositoryProperties.getInstance().getZoneId();
+  }
+
   @Configuration
   @ConditionalOnClass(name = "javax.annotation.PostConstruct")
   static class JavaxPostConstructConfiguration {
 
     @javax.annotation.PostConstruct
     public void init() {
-      LoggerFactory.getLogger(MybatisAutoConfiguration.class)
-          .info("Ready to use MybatisRepository (Spring Boot 2.x)");
+      log.info(readyMessage("Spring Boot 2.x"));
     }
   }
 
@@ -26,8 +36,7 @@ public class MybatisAutoConfiguration {
 
     @jakarta.annotation.PostConstruct
     public void init() {
-      LoggerFactory.getLogger(MybatisAutoConfiguration.class)
-          .info("Ready to use MybatisRepository (Spring Boot 3.x)");
+      log.info(readyMessage("Spring Boot 3.x"));
     }
   }
 }

@@ -161,8 +161,9 @@ public class MybatisEntityHelper {
   }
 
   /**
-   * mapper 인터페이스에서 제네릭 타입으로 선언한 엔티티 클래스를 추출. 예: public interface MyRepo extends
-   * MybatisRepository<User> { ... }
+   * mapper 인터페이스에서 제네릭 타입으로 선언한 엔티티 클래스를 추출.
+   *
+   * <p>예: {@code public interface MyRepo extends MybatisRepository<User> { ... }}
    */
   @SuppressWarnings("unchecked")
   public <E> Class<E> extractEntityClassFromMapper(Class<?> mapperInterface) {

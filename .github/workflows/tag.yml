@@ -31,12 +31,12 @@ jobs:
         run: |
           sed -i "s/VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/VERSION = '${{ env.VERSION }}'/g" build.gradle
 
-      # 4. JDK 11 설정
-      - name: Set up JDK 11
+      # 4. JDK 17 설정
+      - name: Set up JDK 17
         uses: actions/setup-java@main
         with:
           distribution: 'corretto'
-          java-version: '11'
+          java-version: '17'
           cache: 'gradle'
 
       # 5. GPG 키 설정 (In-Memory PGP 키 사용)

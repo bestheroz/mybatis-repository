@@ -32,7 +32,7 @@ Add the following dependency to your `build.gradle`:
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.7.1'
+    implementation 'io.github.bestheroz:mybatis-repository:0.9.0'
 }
 ```
 
@@ -42,13 +42,24 @@ Or add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.7.1</version>
+    <version>0.9.0</version>
 </dependency>
 ```
 
 ## Configuration
 
 ### `application.yml`
+
+Datetime values are inlined into the SQL text as literals, not bound as parameters. The zone you pick is therefore the wall clock that ends up stored in the database.
+
+```yaml
+mybatis-repository:
+  timezone: Asia/Seoul   # defaults to UTC when omitted
+```
+
+Set it and `Instant`, `OffsetDateTime`, ISO8601 strings and `Date`/`Timestamp` all share one wall clock. Leave it unset and each type keeps the default it has always had — `UTC` for the `Instant` family, the JVM default zone for `Date`/`Timestamp`. (`LocalDateTime`/`LocalDate` are wall-clock values already and are unaffected either way.)
+
+> JDBC reads timestamps back with `ResultSet#getTimestamp`, which uses the JVM default time zone. If this setting differs from that zone, **stored and retrieved instants drift apart by exactly that offset.** An unknown zone ID fails startup rather than silently falling back to the default.
 
 Configure the repository to exclude specific fields from SQL operations:
 

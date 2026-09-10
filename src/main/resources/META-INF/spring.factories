@@ -1,2 +1,4 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
 io.github.bestheroz.mybatis.MybatisAutoConfiguration
+org.springframework.context.ApplicationContextInitializer=\
+io.github.bestheroz.mybatis.MybatisTimezoneInitializer

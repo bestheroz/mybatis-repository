@@ -31,7 +31,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.bestheroz:mybatis-repository:0.7.1'
+    implementation 'io.github.bestheroz:mybatis-repository:0.9.0'
 }
 ```
 
@@ -41,9 +41,25 @@ dependencies {
 <dependency>
     <groupId>io.github.bestheroz</groupId>
     <artifactId>mybatis-repository</artifactId>
-    <version>0.7.1</version>
+    <version>0.9.0</version>
 </dependency>
 ```
+
+## 설정
+
+### `application.yml`
+
+시각 값은 바인드 파라미터가 아니라 SQL 리터럴로 그대로 들어갑니다. 그래서 어느 타임존의 벽시계를 찍는지가 곧 DB 에 저장되는 값이 됩니다.
+
+```yaml
+mybatis-repository:
+  timezone: Asia/Seoul   # 생략하면 UTC
+```
+
+지정하면 `Instant`, `OffsetDateTime`, ISO8601 문자열, `Date`/`Timestamp` 가 모두 같은 벽시계를 씁니다. 지정하지 않았을 때의 기본값은 타입마다 예전 그대로입니다 -- `Instant` 계열은 `UTC`, `Date`/`Timestamp` 는 JVM 기본 타임존입니다. (`LocalDateTime`/`LocalDate` 는 애초에 벽시계 값이라 이 설정과 무관합니다.)
+
+> JDBC 는 `ResultSet#getTimestamp` 로 읽을 때 JVM 기본 타임존을 씁니다. 이 설정이 JVM 기본 타임존과 다르면 **저장한 시각과 읽어온 시각이 그 차이만큼 어긋납니다.** 알 수 없는 존 ID 는 조용히 기본값으로 떨어지지 않고 기동을 실패시킵니다.
+
 ## 사용 방법
 
 ### 리포지토리 정의

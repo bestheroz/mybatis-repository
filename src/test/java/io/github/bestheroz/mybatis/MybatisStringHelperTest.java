@@ -1,8 +1,11 @@
 package io.github.bestheroz.mybatis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.time.Instant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,12 @@ class MybatisStringHelperTest {
   @BeforeEach
   void setUp() {
     helper = new MybatisStringHelper();
+  }
+
+  // 타임존은 전역 싱글턴에 들어가므로 테스트끼리 오염되지 않게 매번 되돌린다
+  @AfterEach
+  void tearDown() {
+    MybatisRepositoryProperties.getInstance().resetToDefaults();
   }
 
   @Test
@@ -223,6 +232,32 @@ class MybatisStringHelperTest {
 
     // then
     assertThat(result).isEqualTo("2025-01-02 12:34:56");
+  }
+
+  @Test
+  @DisplayName("설정한 타임존 기준으로 Instant를 변환해야 한다")
+  void instantToString_ShouldUseConfiguredZoneId() {
+    // given
+    MybatisRepositoryProperties.getInstance().setTimezone("Asia/Seoul");
+    Instant instant = Instant.parse("2025-01-02T12:34:56Z");
+    String pattern = "yyyy-MM-dd HH:mm:ss";
+
+    // when
+    String result = helper.instantToString(instant, pattern);
+
+    // then
+    assertThat(result).isEqualTo("2025-01-02 21:34:56");
+  }
+
+  @Test
+  @DisplayName("알 수 없는 존 ID는 예외를 던져야 한다")
+  void setTimezone_ShouldRejectUnknownZoneId() {
+    // given
+    MybatisRepositoryProperties properties = MybatisRepositoryProperties.getInstance();
+
+    // when & then
+    assertThatThrownBy(() -> properties.setTimezone("Asia/Nowhere"))
+        .isInstanceOf(MybatisRepositoryException.class);
   }
 
   @Test

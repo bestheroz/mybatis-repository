@@ -16,22 +16,56 @@ All production code lives in `src/main/java/io/github/bestheroz/mybatis/` — 11
 ./gradlew test --tests "io.github.bestheroz.mybatis.MybatisStringHelperTest.escapeSingleQuote_ShouldEscapeCorrectly"
 ./gradlew spotlessApply             # required before committing
 ./gradlew spotlessCheck
-./gradlew check jar                 # what CI runs for the format gate
+./gradlew check jar                 # what CI runs — use this, not `build`
 ./gradlew dependencyUpdates         # ben-manes versions report
 ```
 
+**Do not use `./gradlew build`.** The `org.springframework.boot` plugin is applied to what is actually a library, so `bootJar` fails with `Main class name has not been configured and it could not be resolved`. This is long-standing and unrelated to any change you make; CI sidesteps it by running `check jar`.
+
 ### Toolchain constraints (important)
 
-CI (`.github/workflows/test.yml`) builds on **JDK 11**. Two things break outside that setup:
+The build sits in a narrow JDK window — **JDK 17 is the tested one** (`.github/workflows/*.yml`):
 
-- **Spotless needs an old JVM.** It is pinned to `googleJavaFormat("1.7")`, and Spotless 8.x refuses to run it on JVM 17+ (`You are running Spotless on JVM 21. This requires google-java-format of at least 1.17.0`). `compileJava`/`test` are fine on a modern JDK — only the spotless tasks need JDK 11.
-- **Gradle must stay on 8.x.** The build applies the `org.springframework.boot` 2.7.18 plugin, which uses Gradle APIs removed in Gradle 9; with a 9.x wrapper even `compileJava` fails at `Failed to notify dependency resolution listener > LenientConfiguration.getFiles()`. 8.14.3 is the last known-good wrapper. (The working tree currently has the wrapper bumped to 9.7.1, which is why local builds fail.)
+- **JDK 8 cannot compile this project.** `jakarta.annotation-api:3.0.0` is Java 11 bytecode (major 55) and `MybatisAutoConfiguration` references `@jakarta.annotation.PostConstruct` directly, so javac 8 fails with `class file has wrong version 55.0, should be 52.0`. Building on 8 is not an option, regardless of the Java 8 *target*.
+- **JDK 11 cannot configure this project.** `com.vanniktech.maven.publish:0.37.0` requires JVM 17+; the build fails at configuration time with `Dependency requires at least JVM runtime version 17`.
+- **Gradle must stay on 8.x.** The `org.springframework.boot` 2.7.18 plugin uses Gradle APIs removed in Gradle 9; with a 9.x wrapper even `compileJava` fails at `Failed to notify dependency resolution listener > LenientConfiguration.getFiles()`. 8.14.3 is known-good.
+- **Google Java Format is capped by the build JVM**, and Spotless reports the mismatch as a confusing `Cannot fingerprint input property 'stepsInternalEquality' ... cannot be serialized` failure rather than a plain message. 1.28.0 needs JVM 17+, 1.30.0 needs JVM 21+, so the version is pinned to 1.28.0 to match CI's JDK 17. Leaving `googleJavaFormat()` unpinned makes Spotless pick the newest version the *current* JVM allows, so a developer on JDK 21 and CI on JDK 17 would reformat each other's code forever. Raise the pin only together with the CI JDK.
 
-If a build fails before any of your code is compiled, check the wrapper and JDK first — it is almost certainly one of these two, not the change under review.
+If a build fails before any of your code is compiled, check the wrapper and JDK first — it is almost certainly one of these, not the change under review.
+
+### Java 8 is a deliberate, standing decision — do not "modernize" it
+
+Targeting Java 8 was reviewed and kept on purpose, to keep the library usable by Spring Boot 2.x / `javax.persistence` consumers still on a Java 8 JVM. It is not neglect, and raising it is not an improvement to offer unprompted.
+
+The review that settled it: bumping to 11 buys only `Set.of`/`List.of`/`var` here (~10 lines, no behaviour change) while cutting off Java 8 users; 17 additionally buys `instanceof` pattern matching, which would tidy the 12-branch cast chain in `MybatisClauseBuilder.formatValueForSQL`, but a 17 target effectively means "Spring Boot 3 only" — which would make the whole `javax`/`jakarta` dual-namespace machinery pointless. Raising the target also does **not** improve runtime performance; that is decided by the consumer's JVM, not by the bytecode level. If the target is ever raised, skip 11, go straight to 17, and pair it with dropping `javax` support as a 1.0 breaking release.
+
+The larger wins are version-independent and still open: the 838 duplicated lines across the twin repository interfaces (39% of the source), the string-interpolated SQL, and the untested SQL-generation classes.
+
+### Java 8 compatibility is enforced by `--release`, not by `targetCompatibility`
+
+`sourceCompatibility`/`targetCompatibility` alone emit `-source 8 -target 8`, which restricts *language syntax* but still links against the build JDK's class library — `String#isBlank()` and `List.of()` compile silently and produce major-52 bytecode that throws `NoSuchMethodError` on a real Java 8 JVM. The build therefore sets:
+
+```groovy
+tasks.withType(JavaCompile).configureEach { options.release.set(8) }
+```
+
+Do not remove it, and do not "fix" a `cannot find symbol` on a Java 9+ API by dropping it — that error is the guard working. Verify the output stays at `major version: 52`.
+
+## Dependencies are `compileOnly`
+
+Every framework dependency (spring-boot-starter, mybatis-spring-boot-starter, both `javax.*` and `jakarta.*` API jars) is `compileOnly`, so the published POM carries **zero runtime dependencies**. That is deliberate: `jakarta.persistence-api:3.2.0` and `mybatis-spring-boot-starter:3.0.5` are Java 17 bytecode (major 61), and shipping them as runtime deps forced Java-17-only jars onto Java 8 consumers — while also pushing both the `javax` and `jakarta` API jars onto everyone, which contradicts the reflective dual-namespace design. Consumers are Spring Boot apps that already have these.
+
+Two consequences: `compileOnly` does not reach the test classpath, so anything a test needs must be repeated as `testImplementation` (the `dependencies` block already mirrors all six); and adding a new `implementation` dependency silently re-introduces the problem — check `build/publications/maven/pom-default.xml` for `<scope>runtime</scope>` after any dependency change.
 
 ## Release
 
 Do not hand-edit `VERSION` in `build.gradle`. Pushing a tag matching `X.Y.Z` triggers `.github/workflows/tag.yml`, which rewrites `VERSION`, runs `./gradlew publishToMavenCentral` with the GPG/Maven Central secrets, and commits the bumped `build.gradle` back to `main`. Every push to any branch also runs `test.yml`, which regenerates and auto-commits the JaCoCo badge under `.github/badges/`.
+
+The `publishToMavenCentral()` call inside the `mavenPublishing` block is what registers the Central repository and creates that task. It was once deleted during a plugin upgrade, which silently removed the task and would have failed the next release with `Task 'publishToMavenCentral' not found`. If you touch the publishing block, confirm the task still exists:
+
+```bash
+./gradlew help --task publishToMavenCentral
+```
 
 ## Architecture
 
@@ -69,7 +103,9 @@ Consequences to remember:
 - `escapeSingleQuote` — escapes `'`, backslash, NUL, newline/CR/tab/backspace/formfeed, `"`, and SUB (`\u001A`) for every value that reaches the SQL string.
 - `wrapIdentifier` → `isValidIdentifier` — allowlist regex `^[a-zA-Z][a-zA-Z0-9_]*$`, a large SQL-keyword blocklist, and a length cap, before wrapping in backticks.
 
-Any new value type in `formatValueForSQL`, or any new clause that emits a column name, must route through these. `MybatisRepositoryProperties` caps blast radius (`maxInClauseSize` 1000, `maxStringValueLength` 4000, `maxIdentifierLength` 256); note it is a plain `getInstance()` singleton, **not** bound with `@ConfigurationProperties`, so those limits are only changeable programmatically — there is no `application.yml` key for them today.
+Any new value type in `formatValueForSQL`, or any new clause that emits a column name, must route through these. `MybatisRepositoryProperties` caps blast radius (`maxInClauseSize` 1000, `maxStringValueLength` 4000, `maxIdentifierLength` 256) and also holds `zoneId`, the wall clock used for datetime literals (default UTC). It is a plain `getInstance()` singleton, **not** bound with `@ConfigurationProperties`; the size limits remain programmatic-only, while `zoneId` is the one value read from `application.yml` (`mybatis-repository.timezone`, declared in `META-INF/additional-spring-configuration-metadata.json` for IDE completion) — see the registration note below for why that happens in an `EnvironmentPostProcessor` and not in a bean.
+
+`zoneId` is `null` when unset, and that null is load-bearing: `getZoneId()` (used by `Instant`, `OffsetDateTime`, ISO-8601 strings) falls back to UTC, while `getDateZoneId()` (used by the `java.util.Date` branch) falls back to `ZoneId.systemDefault()`. Those are the two different defaults those paths shipped with before the setting existed, so a consumer who configures nothing gets byte-identical SQL, and one who configures a zone gets a single wall clock for every type. Collapsing the two getters into one would silently move stored values for somebody. The string setter is named `setTimezone`, not an overload of `setZoneId`, because a same-named overload makes `setZoneId(null)` ambiguous and gives JavaBean binding two candidates.
 
 Enums implementing `io.github.bestheroz.mybatis.type.ValueEnum` are rendered with `getValue()`; other enums with `name()`.
 
@@ -83,16 +119,22 @@ Backtick identifier quoting, `INSTR` / `RIGHT` / `CHAR_LENGTH` for string condit
 
 ### Spring Boot registration
 
-`MybatisAutoConfiguration` is registered twice — `META-INF/spring.factories` (Boot 2.x) and `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (Boot 3.x) — and contains two nested `@ConditionalOnClass` configurations, one per `PostConstruct` namespace. It only logs a readiness message and defines no beans. If you add real configuration, update both registration files.
+`MybatisAutoConfiguration` is registered twice — `META-INF/spring.factories` (Boot 2.x) and `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (Boot 3.x) — and contains two nested `@ConditionalOnClass` configurations, one per `PostConstruct` namespace. It defines no beans; the two nested configurations only log a readiness message, which now carries the resolved zone so the value is visible at boot. If you add real configuration, update both registration files.
+
+`mybatis-repository.timezone` is applied by `MybatisTimezoneInitializer`, an `ApplicationContextInitializer` registered in `spring.factories`. Two things about that choice are load-bearing.
+
+**Do not move it into a bean constructor.** Auto-configuration is registered through a `DeferredImportSelector`, so its beans are created after every user bean; a consumer that queries from a constructor, `@PostConstruct`, or `InitializingBean` would write those rows with the default zone while the rest of the app writes the configured one — silently, with no error. An initializer runs before refresh, which closes that window.
+
+**Do not switch it to `EnvironmentPostProcessor`,** which is the more obvious hook. Boot 4 moved that interface from `org.springframework.boot.env` to `org.springframework.boot`, so whichever package you compile and register against, the other major silently ignores the registration — verified against 4.2.0-M1, whose jar has no `boot.env.EnvironmentPostProcessor` at all. `ApplicationContextInitializer` is a Spring Framework interface and keeps its name across Boot 2, 3 and 4. It returns `LOWEST_PRECEDENCE` so any initializer that contributes property sources has already run.
+
+Note that `zoneId` lands in a process-wide singleton, so two Spring contexts in one JVM (tests, multi-tenant setups) share the last value written.
 
 ## Testing
 
 Tests live in `src/test/java/io/github/bestheroz/mybatis/` and must stay in the `io.github.bestheroz.mybatis` package: most helper methods are `protected`, so a test in another package cannot reach them. JUnit 5 + AssertJ, `@DisplayName` in Korean, given/when/then comment structure.
 
-Only `MybatisStringHelperTest` exists today. `MybatisClauseBuilder`, `MybatisEntityHelper`, and `MybatisCommand` are untested — SQL-generation changes are covered by nothing, so verify them by asserting on the generated SQL string.
+`MybatisStringHelperTest`, `MybatisClauseBuilderTest` (datetime literal zone handling only), `MybatisTimezoneInitializerTest`, and `MybatisTimezoneBootstrapTest` (boots a real `SpringApplicationBuilder` context to prove the zone is applied before user beans initialize) exist today. `MybatisEntityHelper` and `MybatisCommand` are untested, and `MybatisClauseBuilder` is covered only for the zone path — SQL-generation changes are otherwise covered by nothing, so verify them by asserting on the generated SQL string. Tests that touch `MybatisRepositoryProperties.getInstance()` must reset it in `@AfterEach`; it is a process-wide singleton and leaks across test classes otherwise.
 
 ## Code Style
 
-Google Java Format 1.7 via Spotless with `importOrder()`. Java 8 language level and API only (no `var`, no `List.of`, no `Map.of` in library code). Existing comments and log messages are Korean; match the surrounding file.
-
-`CLAUDE.md`, `.claude/`, and `.omc/` are gitignored in this repo.
+Spotless 8.10.2 runs `importOrder()`, `cleanthat()`, `googleJavaFormat('1.28.0')` and `formatAnnotations()`. CleanThat is pinned to `sourceCompatibility('1.8')` so it never rewrites code into Java 9+ constructs. Java 8 language level and API only (no `var`, no `List.of`, no `Map.of` in library code) — `options.release = 8` enforces this at compile time. Existing comments and log messages are Korean; match the surrounding file.
