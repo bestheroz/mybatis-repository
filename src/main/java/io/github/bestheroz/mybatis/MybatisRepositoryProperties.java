@@ -77,7 +77,11 @@ public class MybatisRepositoryProperties {
    * 않으면 UTC 다.
    */
   public ZoneId getZoneId() {
-    return zoneId != null ? zoneId : DEFAULT_ZONE_ID;
+    // volatile 을 한 번만 읽는다. zoneId != null 과 그 뒤의 반환이 각각 읽으면, 두 읽기 사이에
+    // resetToDefaults() 가 끼었을 때 null 이 나가고 OffsetDateTime.ofInstant(instant, null) 에서
+    // NPE 로 끝난다. 이 클래스는 volatile 발행을 근거로 삼고 있으므로 이중 읽기를 남겨 둘 이유가 없다.
+    final ZoneId configured = this.zoneId;
+    return configured != null ? configured : DEFAULT_ZONE_ID;
   }
 
   /**
@@ -87,7 +91,9 @@ public class MybatisRepositoryProperties {
    * 설정도 하지 않은 소비자의 저장 값이 업그레이드만으로 옮겨간다. 타임존을 명시하면 두 경로가 같은 벽시계를 쓴다.
    */
   public ZoneId getDateZoneId() {
-    return zoneId != null ? zoneId : ZoneId.systemDefault();
+    // getZoneId() 와 같은 이유로 volatile 을 한 번만 읽는다.
+    final ZoneId configured = this.zoneId;
+    return configured != null ? configured : ZoneId.systemDefault();
   }
 
   public void setZoneId(ZoneId zoneId) {

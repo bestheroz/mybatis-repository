@@ -4,6 +4,7 @@ import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import io.github.bestheroz.mybatis.type.ValueEnum;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import org.apache.ibatis.jdbc.SQL;
 import org.slf4j.Logger;
@@ -129,8 +130,10 @@ public class MybatisClauseBuilder {
    * @param distinctColumns DISTINCT 처리할 필드명 집합 (자바 필드명)
    * @param targetColumns 실제 조회할 필드명 집합 (자바 필드명)
    * @param entityClass 엔티티 클래스 (예: User.class)
+   * @return SELECT 목록으로 붙인 문자열의 길이 합(구분자 {@code ", "} 포함). 호출부가 완성될 문장의 크기를 미리 잡는 데만 쓰는 값이라, 정확하지
+   *     않아도 만들어지는 SQL 은 달라지지 않는다.
    */
-  protected void appendSelectColumns(
+  protected int appendSelectColumns(
       final SQL sql,
       final Set<String> distinctColumns,
       final Set<String> targetColumns,
@@ -142,16 +145,21 @@ public class MybatisClauseBuilder {
       // 이어 붙인 목록을 캐시에서 한 번에 가져온다. 컬럼이 없으면 SELECT 를 부르지 않아야
       // 빈 컬럼 하나가 목록에 들어가는 것을 피할 수 있다(컬럼을 하나씩 넘기던 때와 같은 문장).
       final String columns = entityHelper.getSelectColumnList(entityClass);
-      if (!columns.isEmpty()) {
-        sql.SELECT(columns);
+      if (columns.isEmpty()) {
+        return 0;
       }
-      return;
+      sql.SELECT(columns);
+      return columns.length();
     }
+
+    int appendedLength = 0;
 
     // DISTINCT 컬럼
     if (distinctColumns != null) {
       for (String distinctCol : distinctColumns) {
-        sql.SELECT_DISTINCT(entityHelper.getWrappedColumnName(entityClass, distinctCol));
+        final String column = entityHelper.getWrappedColumnName(entityClass, distinctCol);
+        appendedLength += column.length() + 2;
+        sql.SELECT_DISTINCT(column);
       }
     }
 
@@ -159,10 +167,13 @@ public class MybatisClauseBuilder {
     if (targetColumns != null) {
       for (String targetCol : targetColumns) {
         if (distinctColumns == null || !distinctColumns.contains(targetCol)) {
-          sql.SELECT(entityHelper.getWrappedColumnName(entityClass, targetCol));
+          final String column = entityHelper.getWrappedColumnName(entityClass, targetCol);
+          appendedLength += column.length() + 2;
+          sql.SELECT(column);
         }
       }
     }
+    return appendedLength;
   }
 
   /**
@@ -529,8 +540,15 @@ public class MybatisClauseBuilder {
    * formatValueForSQL(e).replace('\'', '"')}). 그러면 이스케이프로 생긴 {@code ''} 짝이 {@code ""} 가 되어 {@code
    * O'Brien} 이 {@code O""Brien} 으로 저장됐다. 되돌릴 수 없는 조용한 데이터 손상이다.
    *
-   * <p>그래서 사용자 텍스트가 들어 있는 {@code String} 과 {@code Enum} 은 날것 그대로 넣는다. 나머지 타입은 숫자·불리언·시각처럼 라이브러리가
-   * 형식을 정하는 값이라 사용자 텍스트가 섞이지 않으므로, 정해진 리터럴을 그대로 쓰고 감싼 따옴표만 바꾼다.
+   * <p>그래서 사용자 텍스트가 들어 있는 값은 날것 그대로 넣고, 라이브러리가 형식을 정하는 값(숫자·불리언·시각·{@code byte[]})만 정해진 리터럴을 쓰고 감싼
+   * 따옴표를 바꾼다. <b>기본값은 "사용자 텍스트" 쪽이다.</b>
+   *
+   * <p>예전에는 이 갈림길을 {@code String}/{@code Enum} 인지로만 갈랐는데, 그 전제("나머지는 모두 라이브러리가 형식을 정하는 값")가 틀렸다. 위
+   * 분기 어디에도 걸리지 않는 타입은 {@link #formatValueForSQL} 의 마지막 {@code toString()} 꼬리로 떨어지고, 그 꼬리는 {@code
+   * quoteAndEscape} 를 이미 지난 리터럴을 돌려준다. 즉 바로 위 문단이 "고쳤다" 고 적어 둔 손상이 {@code Character}, {@code
+   * StringBuilder}, {@code UUID}, 소비자 DTO 에서는 그대로 살아 있었다 -- {@code List<StringBuilder>} 의 {@code
+   * O'Brien} 이 {@code O""Brien} 으로, {@code Character('\'')} 는 아포스트로피가 아예 사라진 채로, 원소의 {@code \} 하나는
+   * {@code \\} 로 저장됐다.
    */
   private void appendEmbeddedValue(final StringBuilder body, final Object value) {
     if (value instanceof String) {
@@ -564,6 +582,23 @@ public class MybatisClauseBuilder {
       appendMapBody(body, (Map<?, ?>) value);
       return;
     }
-    body.append(formatValueForSQL(value).replace('\'', '"'));
+    // 라이브러리가 형식을 정하는 값들만 여기로 온다 -- 숫자와 불리언은 따옴표가 없어 치환이 아무
+    // 일도 하지 않고, 시각과 byte[] 는 고정 패턴이라 사용자 텍스트가 섞이지 않는다.
+    // 이 목록은 formatValueForSQL 의 toString() 꼬리보다 위에 있는 분기들과 짝을 이룬다. 어긋나도
+    // 손상은 없는 방향이다: 라이브러리 타입을 빠뜨리면 감싸는 따옴표 모양만 달라지고, 새로 생긴
+    // 사용자 텍스트 타입은 기본값인 아래 분기로 떨어져 옳게 처리된다.
+    if (value == null
+        || value instanceof Number
+        || value instanceof Boolean
+        || value instanceof Date
+        || value instanceof TemporalAccessor
+        || value.getClass().isArray()) {
+      body.append(formatValueForSQL(value).replace('\'', '"'));
+      return;
+    }
+    // toString() 이 사용자 텍스트인 모든 타입. String 원소와 똑같이 날것으로 넣어, 완성된 본문이
+    // 마지막에 quoteAndEscape 를 딱 한 번 지나게 한다. 길이 상한도 String 원소와 같이 본문 전체에
+    // 걸리므로(formatCollectionValue/formatMapValue) 원소마다 다시 보지 않는다.
+    body.append('"').append(value).append('"');
   }
 }

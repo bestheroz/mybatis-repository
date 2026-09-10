@@ -245,7 +245,7 @@ public class MybatisEntityHelper {
       throw new MybatisRepositoryException("fieldName cannot be null");
     }
     if (entityClass == null) {
-      return resolveColumnName(null, fieldName);
+      return requireQuotableColumnName(resolveColumnName(null, fieldName));
     }
     // 바깥 맵도 적중 경로를 get 으로 먼저 본다. 여기가 가장 뜨거운 자리다 --
     // 20컬럼 인서트/업데이트 한 번이면 이 줄만 20번 지난다.
@@ -260,9 +260,35 @@ public class MybatisEntityHelper {
       return cached;
     }
     // 못 찾는 이름은 예외로 끝나는 오류 경로라 캐시하지 않는다. 성공한 것만 담는다.
-    final String resolved = resolveColumnName(entityClass, fieldName);
+    final String resolved = requireQuotableColumnName(resolveColumnName(entityClass, fieldName));
     byFieldName.put(fieldName, resolved);
     return resolved;
+  }
+
+  /**
+   * 컬럼명이 백틱 인용을 벗어날 수 없는 글자로만 되어 있는지 확인한다.
+   *
+   * <p>컬럼명이 SQL 텍스트에 닿는 경로는 두 갈래인데 검증이 한쪽에만 있었다. SELECT/ORDER BY/INSERT 는 {@link
+   * #getWrappedColumnName} → {@code wrapIdentifier} → {@code isValidIdentifier} 의 허용 목록을 지나지만,
+   * WHERE 와 UPDATE SET 은 {@code Condition} 과 {@code buildEqualClause} 안에서 백틱을 직접 이어 붙여 그 관문을 건너뛴다.
+   * 그래서 {@code @Column(name = "a`b")} 하나면 WHERE 절이 {@code `a`b`} 로 나가 인용을 벗어난다 -- SELECT 에서는 예외로
+   * 끝나는 같은 이름이다.
+   *
+   * <p>여기서 막는 것은 {@code isValidIdentifier} 의 허용 목록 전체가 아니라 백틱과 제어 문자뿐이다. 그 둘만이 백틱 인용을 실제로 벗어나게 하고,
+   * 나머지 차이(키워드 차단 목록, 영문자 시작 규칙)는 {@code @Column(name = "left")} 처럼 SQL 을 깨뜨리지 않는 이름을 경로에 따라 다르게
+   * 받아들이는 문제라서 동작 변경 없이 좁히기 어렵다. 그쪽은 그대로 두고 실제로 위험한 것만 여섯 경로에서 한자리에 모아 막는다.
+   *
+   * <p>백틱이 든 컬럼명은 지금도 SELECT 에서 예외가 나고 WHERE 에서는 깨진 문장이 되므로, 이것에 의존해 돌아가던 사용법은 있을 수 없다. 배치 인서트의
+   * {@code ADD_ROW}, {@code Map} 리터럴의 따옴표와 같은 모양이다.
+   */
+  private String requireQuotableColumnName(final String columnName) {
+    for (int i = 0; i < columnName.length(); i++) {
+      final char c = columnName.charAt(i);
+      if (c == '`' || c < ' ') {
+        throw new MybatisRepositoryException("Invalid column name: " + columnName);
+      }
+    }
+    return columnName;
   }
 
   private String resolveColumnName(final Class<?> entityClass, final String fieldName) {

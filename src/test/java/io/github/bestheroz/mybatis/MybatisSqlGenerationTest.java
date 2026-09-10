@@ -809,6 +809,69 @@ class MybatisSqlGenerationTest {
     assertThat(fromCollection).doesNotContain("O\"\"Brien");
   }
 
+  /** {@code toString()} 이 사용자 텍스트인 평범한 소비자 타입. */
+  static class Named {
+    @Override
+    public String toString() {
+      return "O'Brien";
+    }
+  }
+
+  @Test
+  @DisplayName("String·Enum 이 아닌 원소도 아포스트로피가 손상되지 않아야 한다")
+  void formatValueForSQL_ShouldNotCorruptNonStringElements() {
+    // given
+    // 위 테스트가 덮던 손상은 String 과 Enum 에서만 고쳐져 있었다. 그 두 분기에 걸리지 않는 값은
+    // formatValueForSQL 의 마지막 toString() 꼬리로 떨어지는데, 그 꼬리는 이미 이스케이프를 끝낸
+    // 리터럴을 돌려주므로 뒤이은 ' → " 치환이 '' 짝을 "" 로 만들었다.
+    // Character 는 아포스트로피가 아예 사라지고, 원소의 \ 하나는 \\ 로 저장됐다.
+
+    // when
+    String fromBuilder =
+        clauseBuilder.formatValueForSQL(Collections.singletonList(new StringBuilder("O'Brien")));
+    String fromChar =
+        clauseBuilder.formatValueForSQL(Collections.singletonList(Character.valueOf('\'')));
+    String fromPojo = clauseBuilder.formatValueForSQL(Collections.singletonList(new Named()));
+    String fromMapValue =
+        clauseBuilder.formatValueForSQL(
+            Collections.singletonMap("k", new StringBuilder("O'Brien")));
+    String backslash =
+        clauseBuilder.formatValueForSQL(
+            Collections.singletonList(new StringBuilder("back\\slash")));
+
+    // then
+    // 같은 텍스트를 담은 String 원소와 글자까지 같아야 한다. 그것이 이 분기의 규약이다.
+    assertThat(fromBuilder)
+        .isEqualTo(clauseBuilder.formatValueForSQL(Collections.singletonList("O'Brien")));
+    assertThat(fromPojo).isEqualTo(fromBuilder);
+    assertThat(fromChar).isEqualTo(clauseBuilder.formatValueForSQL(Collections.singletonList("'")));
+    assertThat(fromMapValue)
+        .isEqualTo(clauseBuilder.formatValueForSQL(Collections.singletonMap("k", "O'Brien")));
+    assertThat(backslash)
+        .isEqualTo(clauseBuilder.formatValueForSQL(Collections.singletonList("back\\slash")));
+
+    // 망가진 예전 모양이 다시 나오지 않아야 한다
+    assertThat(fromBuilder).doesNotContain("O\"\"Brien");
+    assertThat(backslash).doesNotContain("back\\\\\\\\slash");
+  }
+
+  @Test
+  @DisplayName("라이브러리가 형식을 정하는 원소는 따옴표만 바꿔 넣어야 한다")
+  void formatValueForSQL_ShouldKeepLibraryFormattedElementsUnchanged() {
+    // given
+    // 위 수정이 숫자·불리언·시각·byte[] 쪽으로 번지면 안 된다. 이들은 사용자 텍스트가 없는
+    // 고정 형식이라 감싼 따옴표만 바꾸는 것이 맞다.
+
+    // when
+    String sql =
+        clauseBuilder.formatValueForSQL(
+            Arrays.asList(
+                123L, Boolean.TRUE, java.time.LocalDate.of(2025, 1, 2), new byte[] {0x41, 0x42}));
+
+    // then
+    assertThat(sql).isEqualTo("'[123, true, \\\"2025-01-02\\\", X\\\"4142\\\"]'");
+  }
+
   @Test
   @DisplayName("Collection 안의 ValueEnum 도 이스케이프를 두 번 거치지 않아야 한다")
   void formatValueForSQL_ShouldNotCorruptEnumInsideCollection() {
@@ -1111,5 +1174,177 @@ class MybatisSqlGenerationTest {
                     Collections.singletonMap("userId", 1L)))
         .isInstanceOf(MybatisRepositoryException.class)
         .hasMessageContaining("entity 에 포함되지 않는 필드");
+  }
+
+  @Test
+  @DisplayName("미리 잡은 버퍼 크기는 만들어지는 문장을 바꾸지 않아야 한다")
+  void usingAppender_ShouldRenderIdenticallyToToStringAtAnyCapacity() {
+    // given
+    // 일곱 개 build 메소드가 모두 sql.toString() 대신 usingAppender(미리 크기를 잡은 StringBuilder)
+    // 로 문장을 만든다. 그 둘이 같은 sql(Appendable) 경로를 돈다는 것이 이 최적화의 전제이고,
+    // 크기 힌트가 틀려도 글자가 달라지지 않는다는 것이 유일하게 지켜야 할 성질이다.
+    // 문장 모양마다(SELECT/INSERT/배치 INSERT/UPDATE/DELETE) 확인한다.
+    List<SQL> shapes =
+        Arrays.asList(
+            new SQL().SELECT("`a`, `b`").FROM("t").WHERE("`a` = 1").ORDER_BY("`b` DESC"),
+            new SQL().INSERT_INTO("t").VALUES("`a`", "1").VALUES("`b`", "'x'"),
+            new SQL().INSERT_INTO("t").INTO_COLUMNS("`a`, `b`").INTO_VALUES("1, 'x'"),
+            new SQL().UPDATE("t").SET("`a` = 1").SET("`b` = null").WHERE("`a` = 2"),
+            new SQL().DELETE_FROM("t").WHERE("`a` = 1"));
+
+    for (SQL sql : shapes) {
+      final String expected = sql.toString();
+
+      // when / then
+      // 턱없이 작은 힌트(늘어나야 하는 경우)와 지나치게 큰 힌트(여유가 남는 경우) 모두 같은 문장.
+      assertThat(sql.usingAppender(new StringBuilder(1)).toString()).isEqualTo(expected);
+      assertThat(sql.usingAppender(new StringBuilder(4096)).toString()).isEqualTo(expected);
+      // 실제 코드가 쓰는 하한(16)에서도 같아야 한다.
+      assertThat(sql.usingAppender(new StringBuilder(16)).toString()).isEqualTo(expected);
+    }
+  }
+
+  @Table(name = "backtick_holder")
+  static class BacktickColumn {
+    @Column(name = "a`b")
+    private Long odd;
+
+    @Column(name = "plain")
+    private String plain;
+  }
+
+  interface BacktickColumnRepository extends MybatisRepository<BacktickColumn> {}
+
+  @Test
+  @DisplayName("백틱이 든 컬럼명은 WHERE·SET 에서도 SELECT 와 똑같이 거절해야 한다")
+  void columnName_ShouldRejectBacktickOnEveryPath() throws Exception {
+    // given
+    // 컬럼명 검증이 SELECT/ORDER BY/INSERT 쪽에만 있어서, @Column(name = "a`b") 는
+    // SELECT 에서는 예외였지만 WHERE/UPDATE SET 에서는 `a`b` 로 나가 백틱 인용을 벗어났다.
+    ProviderContext context = providerContextOf(BacktickColumnRepository.class);
+
+    // when / then
+    // 검증이 있던 경로(이전에도 거절)
+    assertThatThrownBy(() -> entityHelper.getWrappedColumnName(BacktickColumn.class, "odd"))
+        .isInstanceOf(MybatisRepositoryException.class);
+
+    // 검증을 건너뛰던 두 경로. 이제 같은 예외 계열로 끝나야 한다.
+    assertThatThrownBy(() -> command.buildDeleteSQL(context, Collections.singletonMap("odd", 1L)))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Invalid column name");
+    assertThatThrownBy(
+            () ->
+                command.buildUpdateSQL(
+                    context,
+                    Collections.singletonMap("odd", 1L),
+                    Collections.singletonMap("plain", "x")))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Invalid column name");
+    assertThatThrownBy(() -> command.buildCountSQL(context, Collections.singletonMap("odd", 1L)))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("Invalid column name");
+
+    // 같은 엔티티의 정상 컬럼은 그대로 동작해야 한다. 가드가 엔티티 단위로 번지면 안 된다.
+    assertThat(command.buildDeleteSQL(context, Collections.singletonMap("plain", "x")))
+        .contains("`plain` = 'x'");
+  }
+
+  @Test
+  @DisplayName("키워드 컬럼명은 WHERE 에서 계속 받아들여야 한다")
+  void columnName_ShouldNotNarrowKeywordBehaviour() throws Exception {
+    // given
+    // 백틱 가드는 실제로 인용을 벗어나는 글자만 막는다. isValidIdentifier 의 키워드 차단 목록까지
+    // WHERE 로 넓히면 @Column(name = "left") 같은 이름이 쓰던 쪽에서 갑자기 깨진다.
+    // 그 비대칭은 의도적으로 그대로 두므로, 좁혀지지 않았음을 여기서 고정한다.
+    ProviderContext context = providerContextOf(KeywordColumnRepository.class);
+
+    // when
+    String delete = command.buildDeleteSQL(context, Collections.singletonMap("left", 1L));
+
+    // then
+    assertThat(delete).contains("`left` = 1");
+    // 같은 이름이 SELECT 에서는 여전히 거절된다(기존 동작).
+    assertThatThrownBy(() -> entityHelper.getWrappedColumnName(KeywordColumn.class, "left"))
+        .isInstanceOf(MybatisRepositoryException.class);
+  }
+
+  @Table(name = "keyword_holder")
+  static class KeywordColumn {
+    @Column(name = "left")
+    private Long left;
+  }
+
+  interface KeywordColumnRepository extends MybatisRepository<KeywordColumn> {}
+
+  /** JPA 의 프로퍼티(게터) 접근 방식 엔티티. 필드에 @Column 이 없어 매핑 필드가 0개가 된다. */
+  static class GetterAnnotated {
+    private Long id;
+
+    @Column(name = "id")
+    public Long getId() {
+      return id;
+    }
+  }
+
+  interface GetterAnnotatedRepository extends MybatisRepository<GetterAnnotated> {}
+
+  @Test
+  @DisplayName("@Column 필드가 없는 엔티티는 실행 불가능한 SQL 대신 예외로 끊어야 한다")
+  void buildSQL_ShouldRejectEntityWithoutMappedColumns() throws Exception {
+    // given
+    // 게터에 @Column 을 붙인 엔티티는 이 라이브러리 규칙상 매핑 필드가 0개다. 예전에는
+    //   select      -> "" (빈 문자열. SELECT 를 한 번도 안 불러 문장 종류가 정해지지 않는다)
+    //   insert      -> "INSERT INTO getter_annotated" (컬럼도 VALUES 도 없음)
+    //   insertBatch -> "... ()\nVALUES ()..."
+    // 처럼 데이터베이스가 받지 않는 문장이 조용히 나갔다.
+    ProviderContext context = providerContextOf(GetterAnnotatedRepository.class);
+    List<GetterAnnotated> batch = Arrays.asList(new GetterAnnotated(), new GetterAnnotated());
+
+    // when / then
+    assertThatThrownBy(
+            () ->
+                command.buildSelectSQL(
+                    context,
+                    Collections.emptySet(),
+                    Collections.emptySet(),
+                    Collections.emptyMap(),
+                    Collections.emptyList(),
+                    null,
+                    null))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("no @Column field");
+    assertThatThrownBy(() -> command.buildInsertSQL(new GetterAnnotated()))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("no @Column field");
+    assertThatThrownBy(() -> command.buildInsertBatchSQL(batch))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("no @Column field");
+
+    // COUNT 는 엔티티 컬럼이 없어도 정상적인 문장이므로 가드가 번지면 안 된다.
+    assertThat(command.buildCountSQL(context, Collections.emptyMap()).replace('\n', ' '))
+        .isEqualTo("SELECT COUNT(1) AS CNT FROM getter_annotated");
+  }
+
+  @Test
+  @DisplayName("COUNT 와 DELETE 도 문장 전체가 그대로여야 한다")
+  void buildCountAndDeleteSQL_ShouldKeepWholeStatementStable() throws Exception {
+    // given
+    // 버퍼 크기를 미리 잡는 변경이 여섯 경로를 모두 건드렸는데, SELECT/INSERT/배치/UPDATE 는
+    // 문장 전체가 이미 박혀 있고 COUNT 와 DELETE 만 비어 있었다. 크기 힌트는 글자를 바꾸지
+    // 않아야 하므로 여기서도 문장째로 고정한다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+
+    // when
+    String count =
+        command.buildCountSQL(context, Collections.singletonMap("userId", 1L)).replace('\n', ' ');
+    String countAll = command.buildCountSQL(context, Collections.emptyMap()).replace('\n', ' ');
+    String delete =
+        command.buildDeleteSQL(context, Collections.singletonMap("userId", 1L)).replace('\n', ' ');
+
+    // then
+    assertThat(count).isEqualTo("SELECT COUNT(1) AS CNT FROM update_target WHERE (`user_id` = 1)");
+    // countAll 은 조건이 없는 것이 정상이다(countAll()/getItems() 는 전체를 센다).
+    assertThat(countAll).isEqualTo("SELECT COUNT(1) AS CNT FROM update_target");
+    assertThat(delete).isEqualTo("DELETE FROM update_target WHERE (`user_id` = 1)");
   }
 }

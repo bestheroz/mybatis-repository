@@ -83,8 +83,9 @@ public class MybatisCommand {
    * <p>{@code log.debug("{}", sql.toString().replaceAll(...))} 는 로그가 꺼져 있어도 인자를 먼저 계산한다. 즉 레벨과 무관하게
    * SQL 전체 사본과 정규식 Pattern 이 매번 만들어졌다. 배치 인서트처럼 SQL 이 큰 경우 그대로 낭비다.
    */
-  private static String renderAndLog(final SQL sql, final String label) {
-    final String rendered = sql.toString();
+  private static String renderAndLog(
+      final SQL sql, final String label, final long estimatedLength) {
+    final String rendered = renderPreSized(sql, estimatedLength);
     logSql(label, rendered);
     return rendered;
   }
@@ -92,21 +93,60 @@ public class MybatisCommand {
   /**
    * 완성될 크기를 미리 잡아 둔 버퍼에 SQL 을 써 넣는다.
    *
-   * <p>{@code AbstractSQL#toString} 은 {@code new StringBuilder()} 로 시작한다. 기본 용량이 16 이라 배치 인서트처럼 문장이
-   * 큰 경우(1000행 x 20컬럼이면 300 KB를 넘는다) 버퍼가 스무 번 가까이 두 배로 늘어나며, 그때마다 지금까지 쓴 내용을 통째로 새 배열에 옮긴다. 결과적으로
-   * 최종 크기의 두 배쯤을 복사하고 그만큼의 배열을 버린다.
+   * <p>{@code AbstractSQL#toString} 은 {@code new StringBuilder()} 로 시작한다. 기본 용량이 16 이라 문장이 그보다 길면
+   * 버퍼가 두 배씩 늘어나며, 그때마다 지금까지 쓴 내용을 통째로 새 배열에 옮긴다. 결과적으로 최종 크기의 두 배쯤을 복사하고 그만큼의 배열을 버린다. 배치
+   * 인서트(1000행 x 20컬럼이면 300 KB를 넘는다)만의 문제가 아니다 -- 20컬럼 엔티티의 평범한 문장도 155~404자라 16에서 다섯에서 여섯 번 늘어난다.
+   * 재어 보면 그 버려지는 배열이 문장 하나를 만드는 데 드는 할당의 10~25%다(전체 컬럼 SELECT 1,775B 중 약 450B, 20컬럼 INSERT 5,359B 중
+   * 약 870B).
    *
    * <p>{@code usingAppender} 는 {@code toString} 이 쓰는 것과 같은 {@code sql(Appendable)} 경로를 그대로 돌리므로
-   * 만들어지는 문자열이 글자까지 같다. 크기 힌트만 미리 주는 것이라 정확하지 않아도 정확성에는 영향이 없다.
+   * 만들어지는 문자열이 글자까지 같다. 크기 힌트만 미리 주는 것이라 정확하지 않아도 정확성에는 영향이 없다 -- 모자라면 늘어나고 남으면 여유로 남는다. 그래서
+   * WHERE/ORDER BY 처럼 길이를 세어 두지 않은 부분은 {@link #WHERE_ALLOWANCE_PER_CONDITION} 같은 어림값으로 잡는다.
    *
-   * <p>{@code usingAppender} 는 mybatis 3.4.0 부터 있다(javap 으로 확인). 이 경로는 {@code ADD_ROW()} 때문에 이미
-   * 3.5.2 를 요구하므로 하한이 새로 생기지는 않는다.
+   * <p><b>이것은 할당을 줄이는 변경이고 속도를 올리는 변경이 아니다.</b> 배치 경로에서 처음 넣을 때 측정한 대로 벽시계 시간은 잡음 안에서 오간다. 다시 손댈 일이
+   * 있으면 이 숫자를 그대로 인용할 것.
+   *
+   * <p>{@code usingAppender} 는 mybatis 3.4.0 부터 있다(javap 으로 확인). 배치 경로는 {@code ADD_ROW()} 때문에 이미
+   * 3.5.2 를 요구하고, 나머지 경로에는 이것이 새로 생기는 하한이지만 3.4.0 은 2016년 판이라 실질적인 제약이 아니다.
    */
   private static String renderPreSized(final SQL sql, final long estimatedLength) {
-    // 행 길이를 실제로 세어 만든 값이라 터무니없는 크기가 나올 수 없다. int 를 넘기는 문장은
-    // 어차피 toString 에서 끝나므로 여기서 자르기만 한다.
+    // 길이를 실제로 세거나 원소 개수로 어림한 값이라 터무니없는 크기가 나올 수 없다. int 를 넘기는
+    // 문장은 어차피 toString 에서 끝나므로 여기서 자르기만 한다.
     final int capacity = (int) Math.min(Math.max(estimatedLength, 16L), Integer.MAX_VALUE);
     return sql.usingAppender(new StringBuilder(capacity)).toString();
+  }
+
+  /**
+   * WHERE 조건 하나가 차지하는 자리의 어림값 -- 백틱 컬럼명, 연산자, 값 리터럴, MyBatis 가 넣는 {@code "AND "} 이음말까지. 재어 본 실제 조건은
+   * 11~23자라 넉넉한 쪽으로 잡았다. 크기 힌트일 뿐이므로 남는 만큼은 버퍼 여유로 남고 정확성에는 영향이 없다.
+   */
+  private static final int WHERE_ALLOWANCE_PER_CONDITION = 40;
+
+  /** ORDER BY 원소 하나(백틱 컬럼명 + {@code " ASC"}/{@code " DESC"} + 이음말)의 어림값. */
+  private static final int ORDER_BY_ALLOWANCE_PER_ELEMENT = 32;
+
+  /** 키워드와 개행처럼 문장 종류마다 고정으로 붙는 부분의 어림값({@code "SELECT ... FROM ... WHERE "} 등). */
+  private static final int STATEMENT_KEYWORD_ALLOWANCE = 40;
+
+  /**
+   * 매핑된 {@code @Column} 필드가 하나도 없는 엔티티를 걸러 낸다.
+   *
+   * <p>그런 엔티티로 컬럼이 필요한 문장을 만들면 실행되지 않는 SQL 이 조용히 나갔다 -- 전체 컬럼 SELECT 는 <b>빈 문자열</b>(MyBatis 는
+   * {@code SELECT} 를 한 번도 부르지 않으면 문장 종류를 정하지 못한다), 단일 인서트는 컬럼도 {@code VALUES} 도 없는 {@code INSERT
+   * INTO t}, 배치 인서트는 {@code ()} 와 {@code VALUES ()}. 어느 쪽도 데이터베이스가 받지 않는다. {@code ADD_ROW} 배치 버그,
+   * {@code Map} 리터럴 따옴표 버그, {@code LIMIT}/{@code OFFSET} 버그와 같은 모양이라 같은 방식으로 끊는다.
+   *
+   * <p>이론적인 경우가 아니다. JPA 의 프로퍼티(게터) 접근 방식으로 {@code @Column} 을 게터에 붙인 엔티티는 이 라이브러리의 "필드에 붙은
+   * {@code @Column} 만 매핑한다" 규칙 때문에 매핑 필드가 0개가 되고, 첫 조회에서 곧바로 이 상태에 빠진다.
+   *
+   * <p>COUNT/DELETE/UPDATE 에는 걸지 않는다. {@code SELECT COUNT(1) AS CNT FROM t} 와 {@code DELETE FROM t
+   * WHERE ...} 는 엔티티 컬럼이 없어도 정상적인 문장이고, UPDATE 는 {@code updateMap} 의 키가 어차피 {@code getColumnName}
+   * 에서 걸린다.
+   */
+  private void requireMappedColumns(final Class<?> entityClass) {
+    if (entityHelper.getEntityFieldsInOrder(entityClass).isEmpty()) {
+      throw new MybatisRepositoryException("entity has no @Column field: " + entityClass.getName());
+    }
   }
 
   private static void logSql(final String label, final String rendered) {
@@ -144,8 +184,13 @@ public class MybatisCommand {
 
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().SELECT("COUNT(1) AS CNT").FROM(tableName);
-    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
-    return renderAndLog(sql, "count");
+    final int conditionCount = clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    return renderAndLog(
+        sql,
+        "count",
+        STATEMENT_KEYWORD_ALLOWANCE
+            + tableName.length()
+            + (long) conditionCount * WHERE_ALLOWANCE_PER_CONDITION);
   }
 
   // ===========================================
@@ -182,14 +227,17 @@ public class MybatisCommand {
           "cannot determine entity class for select: " + context.getMapperType().getName());
     }
 
+    requireMappedColumns(entityClass);
+
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL();
     // SELECT 절
-    clauseBuilder.appendSelectColumns(sql, distinctColumns, targetColumns, entityClass);
+    final int selectLength =
+        clauseBuilder.appendSelectColumns(sql, distinctColumns, targetColumns, entityClass);
     sql.FROM(tableName);
 
     // WHERE 절
-    clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
+    final int conditionCount = clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
 
     // ORDER BY 절
     clauseBuilder.appendOrderBy(sql, orderByConditions, entityClass);
@@ -218,7 +266,18 @@ public class MybatisCommand {
       sql.OFFSET(offset);
     }
 
-    return renderAndLog(sql, "select");
+    return renderAndLog(
+        sql,
+        "select",
+        STATEMENT_KEYWORD_ALLOWANCE
+            + selectLength
+            + tableName.length()
+            + (long) conditionCount * WHERE_ALLOWANCE_PER_CONDITION
+            + (orderByConditions == null
+                ? 0L
+                : (long) orderByConditions.size() * ORDER_BY_ALLOWANCE_PER_ELEMENT)
+            + (limit == null ? 0L : 24L)
+            + (offset == null ? 0L : 24L));
   }
 
   // ===========================================
@@ -230,6 +289,8 @@ public class MybatisCommand {
     }
 
     final Class<?> entityClass = entity.getClass();
+    requireMappedColumns(entityClass);
+
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().INSERT_INTO(tableName);
 
@@ -241,6 +302,8 @@ public class MybatisCommand {
     // 컬럼명도 같은 순서로 캐시해 두고 인덱스로 짝지어 보았지만(중첩 맵 조회 2회 → 목록 읽기 1회)
     // 20컬럼 인서트에서 오히려 3~4% 느렸다. getWrappedColumnName 은 이미 캐시된 조회라 아낄 것이
     // 없고, 값과 어긋나면 다른 컬럼에 쓰는 정렬 불변식만 하나 더 생긴다. 재보지 않고 되돌리지 말 것.
+    // 완성될 문장의 길이를 컬럼과 값을 넘기면서 함께 세어 둔다. 아래 렌더링에 쓸 크기 힌트다.
+    long renderedLength = STATEMENT_KEYWORD_ALLOWANCE + tableName.length();
     for (Field field : entityHelper.getEntityFieldsInOrder(entityClass)) {
       final Object value;
       try {
@@ -252,12 +315,16 @@ public class MybatisCommand {
         log.debug("Stack trace: ", e);
         continue;
       }
-      sql.VALUES(
-          entityHelper.getWrappedColumnName(entityClass, field.getName()),
-          clauseBuilder.formatValueForSQL(value));
+      // 두 문자열을 지역 변수로 받는 것은 길이를 세기 위한 것뿐이다. 컬럼명을 목록에 담아 두고
+      // 인덱스로 값과 짝지으려던 (측정해서 되돌린) 시도와는 다르다 -- 여기서는 짝이 한 줄 안에 있다.
+      final String column = entityHelper.getWrappedColumnName(entityClass, field.getName());
+      final String formatted = clauseBuilder.formatValueForSQL(value);
+      // 컬럼 목록과 값 목록에 각각 ", " 가 하나씩 붙는다.
+      renderedLength += column.length() + formatted.length() + 4L;
+      sql.VALUES(column, formatted);
     }
 
-    return renderAndLog(sql, "insert");
+    return renderAndLog(sql, "insert", renderedLength);
   }
 
   // ===========================================
@@ -269,6 +336,7 @@ public class MybatisCommand {
     }
 
     final Class<?> expectedType = requireSingleEntityType(entities);
+    requireMappedColumns(expectedType);
 
     String tableName = entityHelper.getTableName(expectedType);
 
@@ -312,9 +380,7 @@ public class MybatisCommand {
       sql.INTO_VALUES(row.toString());
     }
 
-    final String rendered = renderPreSized(sql, renderedLength);
-    logSql("insertBatch", rendered);
-    return rendered;
+    return renderAndLog(sql, "insertBatch", renderedLength);
   }
 
   /**
@@ -364,18 +430,21 @@ public class MybatisCommand {
     String tableName = entityHelper.getTableName(entityClass);
     SQL sql = new SQL().UPDATE(tableName);
 
+    // SET 절의 길이는 세어 둔다. WHERE 는 붙은 개수만 알 수 있어 어림값으로 잡는다.
+    long renderedLength = STATEMENT_KEYWORD_ALLOWANCE + tableName.length();
     for (Map.Entry<String, Object> entry : updateMap.entrySet()) {
       String fieldName = entry.getKey();
       String columnName = entityHelper.getColumnName(entityClass, fieldName);
-      sql.SET(clauseBuilder.buildEqualClause(columnName, entry.getValue()));
+      final String assignment = clauseBuilder.buildEqualClause(columnName, entry.getValue());
+      renderedLength += assignment.length() + 2L;
+      sql.SET(assignment);
     }
     final int conditionCount = clauseBuilder.buildWhereClause(sql, whereConditions, entityClass);
 
     // WHERE 없는 UPDATE 를 로그에 완성된 문장으로 먼저 흘리지 않도록 가드를 통과한 뒤에 찍는다.
     clauseBuilder.ensureWhereClause(conditionCount);
-    final String rendered = sql.toString();
-    logSql("update", rendered);
-    return rendered;
+    return renderAndLog(
+        sql, "update", renderedLength + (long) conditionCount * WHERE_ALLOWANCE_PER_CONDITION);
   }
 
   // ===========================================
@@ -397,9 +466,12 @@ public class MybatisCommand {
 
     // WHERE 없는 DELETE 를 로그에 완성된 문장으로 먼저 흘리지 않도록 가드를 통과한 뒤에 찍는다.
     clauseBuilder.ensureWhereClause(conditionCount);
-    final String rendered = sql.toString();
-    logSql("delete", rendered);
-    return rendered;
+    return renderAndLog(
+        sql,
+        "delete",
+        STATEMENT_KEYWORD_ALLOWANCE
+            + tableName.length()
+            + (long) conditionCount * WHERE_ALLOWANCE_PER_CONDITION);
   }
 
   // ===========================================
