@@ -127,6 +127,22 @@ class MybatisProviderBindingTest {
   }
 
   @Test
+  @DisplayName("MyBatis 를 거친 INSERT 도 값이 null 인 컬럼을 DEFAULT 로 내야 한다")
+  void insert_ShouldRenderDefaultForNullFieldsThroughMybatis() {
+    // given
+    // 소비자 쪽에서 터진 모양 그대로다. 값이 null 인 컬럼을 null 리터럴로 내면 NOT NULL DEFAULT 컬럼이
+    // "Column 'X' cannot be null" 로 거부된다. DEFAULT 는 그 자리만 DB 기본값으로 채운다.
+    final TestUser entity = new TestUser();
+    entity.id = 7L;
+    // name 은 null 로 둔다
+
+    // when / then
+    // 컬럼 목록은 두 개가 그대로 남고 값 자리만 갈라진다.
+    assertThat(sqlOf("buildInsertSQL", entity))
+        .isEqualTo("INSERT INTO test_user  (`name`, `user_id`) VALUES (DEFAULT, 7)");
+  }
+
+  @Test
   @DisplayName("조건이 빈 getItemByMap 은 테이블 전체를 읽지 말고 예외로 끝나야 한다")
   void getItemByMap_ShouldRejectEmptyConditions() {
     // given / when

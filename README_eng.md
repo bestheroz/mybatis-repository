@@ -134,12 +134,64 @@ List.of("name", "-createdAt")   // ORDER BY `name` ASC, `created_at` DESC
 | `countByMap(Map)`            | matching row count                 |
 | `insert(T)`                  | insert one row                     |
 | `insertBatch(List<T>)`       | insert many rows in one statement  |
-| `updateById(T, Long)`        | update every field of the entity   |
+| `updateById(T, Long)`        | update the entity's non-null fields |
 | `updateByMap(T, Map)`        | same, matched by filter            |
 | `updateMapById(Map, Long)`   | update only the listed fields      |
 | `updateMapByMap(Map, Map)`   | same, matched by filter            |
 | `deleteById(Long)`           | delete one row                     |
 | `deleteByMap(Map)`           | delete by filter                   |
+
+### What `null` means — the entity path and the map path differ
+
+Whether `null` reads as "not specified" or as "clear it" depends on which path you take.
+
+| Path | What `null` means | INSERT | UPDATE |
+| --- | --- | --- | --- |
+| **Entity** — `insert(T)`, `insertBatch(List<T>)`, `updateById(T, Long)`, `updateByMap(T, Map)` | not specified | emits `DEFAULT` in the value slot, so the column takes its **database default** | **omitted from the SET clause**; the column keeps its stored value |
+| **Map** — `updateMapById(Map, Long)`, `updateMapByMap(Map, Map)` | clear it | — | emits `` SET `col` = null ``, **setting the column to NULL** |
+
+**The map path is the only way to clear a column.**
+
+```java
+// Entity path — changes name and leaves every other column alone
+User user = new User();
+user.setName("kim");            // the other fields stay null
+userRepository.updateById(user, 1L);
+```
+
+```sql
+UPDATE users SET `name` = 'kim' WHERE (`id` = 1)
+```
+
+```java
+// Map path — sets name to NULL
+Map<String, Object> update = new HashMap<>();
+update.put("name", null);
+userRepository.updateMapById(update, 1L);
+```
+
+```sql
+UPDATE users SET `name` = null WHERE (`id` = 1)
+```
+
+INSERT follows the same rule. A field you did not populate is rendered as `DEFAULT` rather than as `null`, so a column declared `NOT NULL DEFAULT ...` receives the default the schema defines. The column is not dropped from the list — only its value slot becomes `DEFAULT` — so `insertBatch` keeps a single column list even when different rows leave different fields null.
+
+```java
+User user = new User();
+user.setLoginId("kim");
+userRepository.insert(user);
+```
+
+```sql
+INSERT INTO users (`id`, `login_id`, `name`, `removed_flag`, `created_at`)
+VALUES (DEFAULT, 'kim', DEFAULT, DEFAULT, DEFAULT)
+```
+
+The column order in the example follows the declaration order for readability; the real order is chosen by the library and not guaranteed. The example also assumes audit stamping is off. With it on, the `created_at` slot carries the interceptor's timestamp rather than `DEFAULT` (see "Audit columns (optional)" below).
+
+What `DEFAULT` resolves to is up to the schema. A nullable column with no explicit default has an implicit default of NULL, so it still stores NULL exactly as before; a column with a declared `DEFAULT` finally receives it. A `NOT NULL` column with no default is still an error, only with a different message (`Column 'x' cannot be null` becomes `Field 'x' doesn't have a default value`).
+
+`DEFAULT` is MySQL/MariaDB syntax, which the generated SQL already assumes throughout.
 
 ## Conditions (WHERE)
 
@@ -203,7 +255,7 @@ public class MyAuditorAware implements MybatisAuditorAware {
 ```
 
 - **INSERT** — all four fields are stamped. `insertBatch` gives every row the same instant.
-- **UPDATE** — only `updatedAt` / `updatedBy` are stamped. Audit keys the caller put into `updateMap` are dropped so they cannot be forged, and the creation-side pair is never rewritten. Every other entry is passed through untouched, including one whose value is `null` (the `SET col = null` contract still holds).
+- **UPDATE** — only `updatedAt` / `updatedBy` are stamped. Audit keys the caller put into `updateMap` are dropped so they cannot be forged, and the creation-side pair is never rewritten. Every other entry is passed through untouched, including one whose value is `null` (the map path's `SET col = null` contract still holds). Entity-path updates reach the interceptor with their `null` fields already removed.
 - A name that has no `@Column` field on the entity is skipped. Entities without audit columns are normal.
 - An empty auditor (`Optional.empty()`) leaves the `*_BY` columns alone and still stamps the timestamps — for batch jobs, schedulers and other session-less paths.
 - The `updateMap` you pass in is never modified. Handing over a shared constant is safe.
@@ -229,6 +281,7 @@ Timestamps may be `Instant`, `LocalDateTime`, `java.util.Date` or `java.sql.Time
 - **A field without `@Column` does not exist** as far as this library is concerned. It is skipped by select, insert and update, and naming it in a condition map throws `MybatisRepositoryException`.
 - **The `...ById` methods assume a `Long` field named `id`.** The `@Id` annotation is never read. If your primary key has a different name or type, use the `...ByMap` variants.
 - **UPDATE and DELETE throw when the filter is empty**, so an accidental update-all or delete-all is not possible.
+- **`updateById` / `updateByMap` throw when every field of the entity is `null`**, because there would be no column left to SET. With audit stamping enabled and an `updatedAt` field on the entity, the interceptor fills the empty SET with its own stamps instead, so an audit-only UPDATE is issued rather than an exception.
 - **An unrecognised condition type silently falls back to `eq`.** A typo such as `name:contain` becomes an equality comparison rather than an error.
 - Map keys are **Java field names in camelCase**, not column names.
 - Queries list the `@Column` fields explicitly rather than using `SELECT *`. Column order is not guaranteed.

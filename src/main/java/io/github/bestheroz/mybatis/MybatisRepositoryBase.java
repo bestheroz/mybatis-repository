@@ -393,22 +393,43 @@ public interface MybatisRepositoryBase<T> {
       final Map<String, Object> updateMap,
       final Map<String, Object> whereConditions);
 
+  /**
+   * 맵으로 갱신한다. 키가 없으면 그 컬럼은 문장에 나오지 않고, 키가 있고 값이 {@code null} 이면 {@code `컬럼` = null} 로 나가 그 컬럼을 비운다.
+   *
+   * <p>컬럼을 NULL 로 비울 수 있는 경로는 여기와 {@link #updateMapById(Map, Long)} 뿐이다.
+   */
   default void updateMapByMap(
       final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
     this.buildUpdateSQL(null, updateMap, whereConditions);
   }
 
+  /**
+   * 엔티티로 갱신한다. 값이 {@code null} 인 필드는 "정하지 않았다" 는 뜻이라 SET 절에서 빠지고, 그 컬럼은 저장된 값을 그대로 유지한다.
+   *
+   * <p>컬럼을 NULL 로 비우려면 {@link #updateMapById(Map, Long)} 에 {@code null} 값을 담아 넘긴다.
+   */
   default void updateById(final T entity, final Long id) {
-    this.buildUpdateSQL(null, MybatisCommand.toMap(entity), Collections.singletonMap("id", id));
+    this.buildUpdateSQL(
+        null, MybatisCommand.toNonNullMap(entity), Collections.singletonMap("id", id));
   }
 
+  /**
+   * 엔티티로 갱신한다. 값이 {@code null} 인 필드는 "정하지 않았다" 는 뜻이라 SET 절에서 빠지고, 그 컬럼은 저장된 값을 그대로 유지한다.
+   *
+   * <p>컬럼을 NULL 로 비우려면 {@link #updateMapByMap(Map, Map)} 에 {@code null} 값을 담아 넘긴다.
+   */
   default void updateByMap(final T entity, final Map<String, Object> whereConditions) {
     this.buildUpdateSQL(
         null,
-        MybatisCommand.toMap(entity),
+        MybatisCommand.toNonNullMap(entity),
         whereConditions == null ? Collections.emptyMap() : whereConditions);
   }
 
+  /**
+   * 맵으로 갱신한다. 키가 없으면 그 컬럼은 문장에 나오지 않고, 키가 있고 값이 {@code null} 이면 {@code `컬럼` = null} 로 나가 그 컬럼을 비운다.
+   *
+   * <p>컬럼을 NULL 로 비울 수 있는 경로는 여기와 {@link #updateMapByMap(Map, Map)} 뿐이다.
+   */
   default void updateMapById(final Map<String, Object> updateMap, final Long id) {
     this.buildUpdateSQL(null, updateMap, Collections.singletonMap("id", id));
   }

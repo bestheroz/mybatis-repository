@@ -78,6 +78,23 @@ public class MybatisCommand {
   private static final List<String> EMPTY_LIST = Collections.emptyList();
 
   /**
+   * INSERT 의 값 자리에서 {@code null} 대신 쓰는 키워드.
+   *
+   * <p>엔티티 경로에서 {@code null} 은 "이 컬럼은 정하지 않았다" 는 뜻이지 "NULL 을 넣어라" 가 아니다. {@code null} 리터럴을 그대로 내면
+   * {@code NOT NULL DEFAULT} 가 걸린 컬럼이 기본값을 받지 못하고 {@code Column 'X' cannot be null} 로 거부된다.
+   * MySQL/MariaDB 의 {@code INSERT ... VALUES (DEFAULT)} 는 그 자리만 기본값으로 채우므로, 컬럼 목록을 손대지 않고도(=배치의 컬럼
+   * 집합과 {@code ORDERED_FIELD_CACHE} 순서 불변식을 건드리지 않고도) 원하는 뜻을 낼 수 있다.
+   *
+   * <p>AUTO_INCREMENT PK 에 {@code DEFAULT} 가 들어가면 {@code null} 과 똑같이 자동 증가로 처리된다. MariaDB 는
+   * KB(AUTO_INCREMENT) 가 "NULL or DEFAULT" 로 명시한다. MySQL 레퍼런스에는 그 문장이 없고, "AUTO_INCREMENT 컬럼의 기본값은
+   * 시퀀스의 다음 값"(Data Type Default Values) + "DEFAULT 는 컬럼을 기본값으로 명시 설정"(INSERT) 두 문서를 이은 추론이다.
+   *
+   * <p>WHERE 절과 맵 경로 UPDATE 는 여전히 {@code null} 리터럴이 필요하므로 {@code formatValueForSQL} 자체는 그대로 두고
+   * INSERT 렌더링 지점에서만 갈라진다.
+   */
+  private static final String DEFAULT_KEYWORD = "DEFAULT";
+
+  /**
    * SQL 을 한 번만 문자열로 만들고, 디버그 로그가 켜져 있을 때만 개행을 지운 사본을 만든다.
    *
    * <p>{@code log.debug("{}", sql.toString().replaceAll(...))} 는 로그가 꺼져 있어도 인자를 먼저 계산한다. 즉 레벨과 무관하게
@@ -318,7 +335,9 @@ public class MybatisCommand {
       // 두 문자열을 지역 변수로 받는 것은 길이를 세기 위한 것뿐이다. 컬럼명을 목록에 담아 두고
       // 인덱스로 값과 짝지으려던 (측정해서 되돌린) 시도와는 다르다 -- 여기서는 짝이 한 줄 안에 있다.
       final String column = entityHelper.getWrappedColumnName(entityClass, field.getName());
-      final String formatted = clauseBuilder.formatValueForSQL(value);
+      // 값이 null 이면 "정하지 않았다" 는 뜻이므로 DEFAULT 로 자리만 채워 DB 기본값을 받게 한다.
+      final String formatted =
+          value == null ? DEFAULT_KEYWORD : clauseBuilder.formatValueForSQL(value);
       // 컬럼 목록과 값 목록에 각각 ", " 가 하나씩 붙는다.
       renderedLength += column.length() + formatted.length() + 4L;
       sql.VALUES(column, formatted);
@@ -373,7 +392,10 @@ public class MybatisCommand {
           row.append(", ");
         }
         firstColumn = false;
-        row.append(clauseBuilder.formatValueForSQL(readFieldValue(field, entity)));
+        // 단건 INSERT 와 같은 규약이다. 값이 null 인 자리에는 DEFAULT 를 넣어 DB 기본값을 받게 한다.
+        // 행마다 null 인 필드가 달라도 컬럼 목록은 하나로 고정되므로(자리만 바뀐다) 배치가 성립한다.
+        final Object value = readFieldValue(field, entity);
+        row.append(value == null ? DEFAULT_KEYWORD : clauseBuilder.formatValueForSQL(value));
       }
       // 행 하나가 차지하는 자리: 값들 + 감싸는 괄호 둘 + 행 구분자 "\n, ".
       renderedLength += row.length() + 8L;
@@ -417,9 +439,16 @@ public class MybatisCommand {
     // SET 절이 하나도 없으면 MyBatis 는 "UPDATE t WHERE (...)" 를 만든다. SET 이 빠진 문장은 어느 DB 도
     // 받지 않으므로 DB 까지 보내 문법 오류를 받을 이유가 없다. null 은 여기까지 오면 아래 entrySet()
     // 에서 맨 NPE 가 나가던 자리라, 다른 입력 검증과 같은 예외로 맞춘다.
-    // 값이 null 인 키는 여기서 걸러지지 않는다 -- 키가 있으면 `컬럼` = null 로 나가는 것이 규약이다.
+    // 값이 null 인 키는 여기서 걸러지지 않는다 -- 맵 경로에서 키가 있으면 `컬럼` = null 로 나가는 것이 규약이다.
+    // 다만 엔티티 경로(updateById/updateByMap)는 toNonNullMap 이 null 필드를 미리 뺀 맵을 넘기므로,
+    // 전 필드가 null 인 엔티티는 빈 맵이 되어 여기에 걸린다. 기본 메시지만으로는 누가 비웠는지 알 수 없어
+    // 두 경로를 함께 짚어 준다.
     if (updateMap == null || updateMap.isEmpty()) {
-      throw new MybatisRepositoryException("'updateMap' is required for update");
+      throw new MybatisRepositoryException(
+          "'updateMap' is required for update"
+              + " (SET 할 컬럼이 없다."
+              + " 엔티티 경로는 값이 null 인 필드를 SET 에서 빼므로 전 필드가 null 인 엔티티는 여기에 걸린다."
+              + " 컬럼을 NULL 로 비우려면 updateMapById/updateMapByMap 에 null 값을 담아 넘길 것)");
     }
     Class<?> entityClass = entityHelper.extractEntityClassFromMapper(context.getMapperType());
     if (entityClass == null) {
@@ -517,5 +546,31 @@ public class MybatisCommand {
       }
     }
     return map;
+  }
+
+  /**
+   * {@link #toMap(Object)} 에서 값이 {@code null} 인 항목을 뺀 맵. 엔티티 기반 UPDATE 가 쓰는 입구다.
+   *
+   * <p>엔티티 경로에서 {@code null} 은 "이 컬럼은 정하지 않았다" 는 뜻이므로 SET 절에 나오면 안 된다. 예전에는 {@code toMap} 을 그대로 넘겨
+   * 엔티티에 채우지 않은 컬럼까지 전부 {@code = null} 로 덮었다. 컬럼을 정말 비우고 싶으면 맵 경로({@code updateMapById} / {@code
+   * updateMapByMap})에 {@code null} 값을 담아 넘긴다 -- 그쪽 규약은 그대로다.
+   *
+   * <p>{@code LinkedHashMap} 에 {@code toMap} 의 순회 순서 그대로 담으므로 SET 절 순서가 {@code toMap} 순서(= INSERT
+   * 컬럼 순서)와 어긋나지 않는다.
+   *
+   * <p>{@code toMap} 은 공개 API 라 그대로 둔다. 소비자가 쓰고 있다.
+   *
+   * <p>결과가 비면(=엔티티의 모든 필드가 null) 여기서 끊지 않고 그대로 넘긴다. {@code buildUpdateSQL} 의 빈 updateMap 가드가 {@code
+   * whereConditions} 검사 뒤에 오도록 순서가 고정되어 있어서다.
+   */
+  public static Map<String, Object> toNonNullMap(final Object source) {
+    final Map<String, Object> map = toMap(source);
+    final Map<String, Object> nonNull = new LinkedHashMap<>();
+    for (Map.Entry<String, Object> entry : map.entrySet()) {
+      if (entry.getValue() != null) {
+        nonNull.put(entry.getKey(), entry.getValue());
+      }
+    }
+    return nonNull;
   }
 }

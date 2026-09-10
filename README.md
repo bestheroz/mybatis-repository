@@ -134,12 +134,64 @@ List.of("name", "-createdAt")   // ORDER BY `name` ASC, `created_at` DESC
 | `countByMap(Map)`            | 조건에 맞는 행 수          |
 | `insert(T)`                  | 단건 삽입                |
 | `insertBatch(List<T>)`       | 한 문장으로 다건 삽입       |
-| `updateById(T, Long)`        | 엔티티의 모든 필드로 갱신    |
-| `updateByMap(T, Map)`        | 엔티티의 모든 필드로 조건 갱신 |
+| `updateById(T, Long)`        | 엔티티에서 값이 있는 필드만 갱신 |
+| `updateByMap(T, Map)`        | 같은 규칙으로 조건 갱신      |
 | `updateMapById(Map, Long)`   | 지정한 필드만 갱신          |
 | `updateMapByMap(Map, Map)`   | 지정한 필드만 조건 갱신      |
 | `deleteById(Long)`           | 단건 삭제                |
 | `deleteByMap(Map)`           | 조건 삭제                |
+
+### `null` 의 뜻 — 엔티티 경로와 맵 경로가 다릅니다
+
+`null` 을 "정하지 않았다" 로 읽을지 "비워라" 로 읽을지가 두 경로에서 갈립니다.
+
+| 경로 | `null` 의 뜻 | INSERT | UPDATE |
+| --- | --- | --- | --- |
+| **엔티티** — `insert(T)`, `insertBatch(List<T>)`, `updateById(T, Long)`, `updateByMap(T, Map)` | 정하지 않았다 | 값 자리에 `DEFAULT` 를 내보내 **DB 기본값**을 받습니다 | SET 절에서 **빠집니다**. 그 컬럼은 저장된 값을 유지합니다 |
+| **맵** — `updateMapById(Map, Long)`, `updateMapByMap(Map, Map)` | 비워라 | — | `` SET `col` = null `` 로 나가 **컬럼을 NULL 로 만듭니다** |
+
+**컬럼을 NULL 로 비울 수 있는 것은 맵 경로뿐입니다.**
+
+```java
+// 엔티티 경로 — name 만 바꾸고 나머지 컬럼은 건드리지 않는다
+User user = new User();
+user.setName("kim");            // 그 밖의 필드는 null 인 채로 둔다
+userRepository.updateById(user, 1L);
+```
+
+```sql
+UPDATE users SET `name` = 'kim' WHERE (`id` = 1)
+```
+
+```java
+// 맵 경로 — name 을 NULL 로 비운다
+Map<String, Object> update = new HashMap<>();
+update.put("name", null);
+userRepository.updateMapById(update, 1L);
+```
+
+```sql
+UPDATE users SET `name` = null WHERE (`id` = 1)
+```
+
+INSERT 도 같은 규약입니다. 값을 채우지 않은 필드는 `null` 이 아니라 `DEFAULT` 로 나가므로, `NOT NULL DEFAULT ...` 가 걸린 컬럼이 스키마의 기본값을 그대로 받습니다. 컬럼이 목록에서 빠지는 것이 아니라 값 자리만 `DEFAULT` 가 되므로, `insertBatch` 에서 행마다 `null` 인 필드가 달라도 컬럼 목록은 하나로 유지됩니다.
+
+```java
+User user = new User();
+user.setLoginId("kim");
+userRepository.insert(user);
+```
+
+```sql
+INSERT INTO users (`id`, `login_id`, `name`, `removed_flag`, `created_at`)
+VALUES (DEFAULT, 'kim', DEFAULT, DEFAULT, DEFAULT)
+```
+
+위 예시의 컬럼 순서는 읽기 편하게 선언 순서로 적은 것이고, 실제 순서는 라이브러리가 정합니다(보장되지 않음). 또한 감사 컬럼 자동 기입을 켜지 않은 경우입니다. 켜 두었다면 `created_at` 자리에는 `DEFAULT` 가 아니라 인터셉터가 채운 시각이 들어갑니다(아래 "감사 컬럼" 절 참고).
+
+`DEFAULT` 가 무엇이 되는지는 스키마가 정합니다. 기본값이 따로 없는 nullable 컬럼은 암묵적 기본값이 NULL 이라 예전과 똑같이 NULL 이 들어가고, `DEFAULT` 가 선언된 컬럼은 그 값을 받습니다. 기본값이 없는 `NOT NULL` 컬럼은 예전처럼 오류이며 메시지만 바뀝니다(`Column 'x' cannot be null` → `Field 'x' doesn't have a default value`).
+
+`DEFAULT` 는 MySQL/MariaDB 문법입니다. 이 라이브러리가 만드는 SQL 은 원래 그 두 가지를 전제합니다.
 
 ## 조건 (WHERE)
 
@@ -203,7 +255,7 @@ public class MyAuditorAware implements MybatisAuditorAware {
 ```
 
 - **INSERT** — 네 필드를 모두 채웁니다. `insertBatch` 는 모든 행을 같은 시각으로 채웁니다.
-- **UPDATE** — `updatedAt` / `updatedBy` 만 채웁니다. 호출부가 `updateMap` 에 넣은 감사 컬럼 값은 위조 방지를 위해 걷어내고, 생성 계열은 다시 쓰지 않습니다. 그 밖의 키는 값이 `null` 이어도 그대로 둡니다(`SET col = null` 규약 유지).
+- **UPDATE** — `updatedAt` / `updatedBy` 만 채웁니다. 호출부가 `updateMap` 에 넣은 감사 컬럼 값은 위조 방지를 위해 걷어내고, 생성 계열은 다시 쓰지 않습니다. 그 밖의 키는 값이 `null` 이어도 그대로 둡니다(맵 경로의 `SET col = null` 규약 유지). 엔티티 경로는 인터셉터에 닿기 전에 이미 `null` 필드가 빠진 상태로 도착합니다.
 - 엔티티에 그 이름의 `@Column` 필드가 없으면 그냥 건너뜁니다. 감사 컬럼이 없는 엔티티도 정상입니다.
 - 감사자가 비어 있으면(`Optional.empty()`) `*_BY` 는 건드리지 않고 일시만 채웁니다. 배치·스케줄러처럼 세션이 없는 경로를 위한 것입니다.
 - 호출부가 넘긴 `updateMap` 은 변형하지 않습니다. 공유 상수를 그대로 넘겨도 안전합니다.
@@ -229,6 +281,7 @@ mybatis-repository:
 - **`@Column` 이 없는 필드는 없는 것으로 취급됩니다.** 조회·삽입·수정 대상에서 빠지고, 조건 Map 에 그 필드명을 넣으면 `MybatisRepositoryException` 이 발생합니다.
 - **`...ById` 메서드는 `id` 라는 이름의 `Long` 필드를 전제합니다.** `@Id` 애노테이션은 읽지 않습니다. PK 의 이름이나 타입이 다르면 `...ByMap` 을 쓰세요.
 - **UPDATE 와 DELETE 는 조건이 비면 예외를 던집니다.** 전체 갱신·전체 삭제를 실수로 실행할 수 없습니다.
+- **엔티티의 모든 필드가 `null` 이면 `updateById` / `updateByMap` 은 예외를 던집니다.** SET 할 컬럼이 하나도 없기 때문입니다. 단, 감사 컬럼 자동 기입을 켜 두었고 엔티티에 수정 일시 필드가 있으면 예외 대신 수정 일시·수정자만 갱신하는 UPDATE 가 나갑니다(인터셉터가 빈 SET 을 감사 컬럼으로 채우기 때문).
 - **알 수 없는 조건타입은 조용히 `eq` 가 됩니다.** `name:contain` 처럼 오타를 내도 오류 없이 동등 비교로 처리됩니다.
 - Map 의 키는 컬럼명이 아니라 **자바 필드명(카멜케이스)** 입니다.
 - 조회는 `SELECT *` 가 아니라 `@Column` 필드 목록을 명시적으로 나열합니다. 컬럼 순서는 보장되지 않습니다.

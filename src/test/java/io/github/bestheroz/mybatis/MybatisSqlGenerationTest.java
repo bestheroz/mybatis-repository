@@ -484,6 +484,8 @@ class MybatisSqlGenerationTest {
     // 정하므로, 캐시를 만드는 방식이 바뀌면 순서가 조용히 바뀐다. 실제로 toMap 에 크기를
     // 미리 지정했다가 @Column 이 3, 4, 5, 12, 24개인 엔티티에서 순서가 바뀌는 것을 확인했다.
     // 생성된 SQL 을 통째로 박아 두어야만 이런 변경이 드러나므로 여기서 고정한다.
+    // 값이 전부 null 인 엔티티라 값 자리는 모두 DEFAULT 다(엔티티 경로에서 null 은 "정하지 않았다").
+    // 여기서 보는 것은 값이 아니라 컬럼 목록의 순서다.
 
     // when
     String four = command.buildInsertSQL(new FourColumn());
@@ -494,14 +496,73 @@ class MybatisSqlGenerationTest {
         .isEqualTo(
             "INSERT INTO four_col\n"
                 + " (`bravo`, `alpha`, `delta`, `charlie`)\n"
-                + "VALUES (null, null, null, null)");
+                + "VALUES (DEFAULT, DEFAULT, DEFAULT, DEFAULT)");
     assertThat(twelve)
         .isEqualTo(
             "INSERT INTO twelve_col\n"
                 + " (`c11`, `c10`, `c02`, `c01`, `c12`, `c04`, `c03`, `c06`, `c05`, `c08`,"
                 + " `c07`, `c09`)\n"
-                + "VALUES (null, null, null, null, null, null, null, null, null, null, null,"
-                + " null)");
+                + "VALUES (DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT,"
+                + " DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT)");
+  }
+
+  @Test
+  @DisplayName("INSERT 는 값이 null 인 필드를 DEFAULT 로 내고 컬럼 목록은 그대로 두어야 한다")
+  void buildInsertSQL_ShouldRenderDefaultForNullFields() {
+    // given
+    // 엔티티의 모든 @Column 필드를 INSERT 에 명시하면서 값을 null 리터럴로 냈더니, 호출부가 채우지 않은
+    // 컬럼이 DB 기본값을 받지 못하고 "Column 'X' cannot be null" 로 거부됐다. 그 자리를 DEFAULT 로 채운다.
+    // 컬럼을 목록에서 빼는 방식은 쓰지 않는다 -- 배치에서 행마다 컬럼 집합이 달라져 성립하지 않고,
+    // ORDERED_FIELD_CACHE 와 SELECT_COLUMNS_CACHE 의 순서 불변식도 깨진다.
+    FourColumn row = new FourColumn();
+    row.alpha = "A";
+    row.charlie = "C";
+    // bravo, delta 는 null 로 둔다
+
+    // when
+    String sql = command.buildInsertSQL(row);
+
+    // then
+    // 컬럼 목록은 네 개가 모두 남고, 값 자리만 DEFAULT 와 실제 값이 섞인다.
+    assertThat(sql)
+        .isEqualTo(
+            "INSERT INTO four_col\n"
+                + " (`bravo`, `alpha`, `delta`, `charlie`)\n"
+                + "VALUES (DEFAULT, 'A', DEFAULT, 'C')");
+  }
+
+  @Test
+  @DisplayName("배치 INSERT 는 행마다 null 자리가 달라도 컬럼 목록 하나로 DEFAULT 를 짝지어야 한다")
+  void buildInsertBatchSQL_ShouldRenderDefaultPerRowKeepingOneColumnList() {
+    // given
+    // 배치는 컬럼 목록이 하나뿐이라 "null 인 컬럼을 목록에서 뺀다" 는 해법이 아예 성립하지 않는다.
+    // 행마다 서로 다른 필드를 null 로 두어, 자리가 한 칸이라도 밀리면 DEFAULT 가 엉뚱한 컬럼으로 간다.
+    TwelveColumn first = new TwelveColumn("a");
+    first.c01 = null; // 컬럼 목록에서 네 번째 자리
+    first.c07 = null; // 열한 번째 자리
+    TwelveColumn second = new TwelveColumn("b");
+    second.c11 = null; // 첫 번째 자리
+    second.c09 = null; // 열두 번째 자리
+
+    List<TwelveColumn> rows = new ArrayList<>();
+    rows.add(first);
+    rows.add(second);
+
+    // when
+    String sql = command.buildInsertBatchSQL(rows);
+
+    // then
+    assertThat(sql)
+        .isEqualTo(
+            "INSERT INTO twelve_col\n"
+                + " (`c11`, `c10`, `c02`, `c01`, `c12`, `c04`, `c03`, `c06`, `c05`, `c08`,"
+                + " `c07`, `c09`)\n"
+                + "VALUES ('a11', 'a10', 'a02', DEFAULT, 'a12', 'a04', 'a03', 'a06', 'a05',"
+                + " 'a08', DEFAULT, 'a09')\n"
+                + ", (DEFAULT, 'b10', 'b02', 'b01', 'b12', 'b04', 'b03', 'b06', 'b05', 'b08',"
+                + " 'b07', DEFAULT)");
+    // 컬럼 목록은 행의 null 패턴과 무관하게 전체 컬럼 SELECT 목록 그대로다.
+    assertThat(sql).contains("(" + entityHelper.getSelectColumnList(TwelveColumn.class) + ")");
   }
 
   @Test
@@ -1068,9 +1129,11 @@ class MybatisSqlGenerationTest {
   @DisplayName("updateMap 에 없는 키는 SET 절에서 빠지고, 값이 null 인 키는 NULL 로 갱신해야 한다")
   void buildUpdateSQL_ShouldOmitAbsentKeysAndAssignNullForNullValues() throws Exception {
     // given
-    // 이 라이브러리의 부분 수정 규약이다. 키가 아예 없으면 그 컬럼은 문장에 나타나지 않아 기존 값이
+    // 맵 경로의 부분 수정 규약이다. 키가 아예 없으면 그 컬럼은 문장에 나타나지 않아 기존 값이
     // 그대로 남고, 키가 있고 값이 null 이면 `컬럼` = null 로 나가 NULL 이 저장된다.
     // 둘을 한 문장에서 함께 확인해야 "null 이면 건너뛴다" 로 바뀌는 회귀를 잡을 수 있다.
+    // 엔티티 경로에 null 필터가 생긴 뒤에도 이쪽은 한 글자도 바뀌지 않는다 -- 컬럼을 NULL 로
+    // 비울 수 있는 유일한 경로라서다.
     ProviderContext context = providerContextOf(UpdateTargetRepository.class);
     Map<String, Object> where = Collections.singletonMap("userId", 1L);
 
@@ -1105,11 +1168,12 @@ class MybatisSqlGenerationTest {
   }
 
   @Test
-  @DisplayName("엔티티로 갱신하면 값이 null 인 필드까지 NULL 로 덮어써야 한다")
-  void buildUpdateSQL_ShouldOverwriteNullEntityFieldsWithNull() throws Exception {
+  @DisplayName("엔티티로 갱신하면 값이 null 인 필드는 SET 절에 나오지 않아야 한다")
+  void buildUpdateSQL_ShouldOmitNullEntityFieldsFromSet() throws Exception {
     // given
-    // updateById/updateByMap 은 toMap(entity) 를 그대로 updateMap 으로 넘긴다. toMap 은 @Column 필드를
-    // 값과 무관하게 모두 담으므로, 엔티티 기반 갱신은 부분 수정이 아니라 전체 덮어쓰기다.
+    // updateById/updateByMap 은 toNonNullMap(entity) 를 넘긴다. 엔티티 경로에서 null 은
+    // "이 컬럼은 정하지 않았다" 는 뜻이라 SET 에서 빠지고, 그 컬럼은 저장된 값을 유지한다.
+    // 예전에는 toMap 을 그대로 넘겨 채우지 않은 필드까지 전부 = null 로 덮었다.
     ProviderContext context = providerContextOf(UpdateTargetRepository.class);
     UpdateTarget entity = new UpdateTarget();
     entity.userId = 7L;
@@ -1119,10 +1183,79 @@ class MybatisSqlGenerationTest {
     // when
     String sql =
         command.buildUpdateSQL(
-            context, MybatisCommand.toMap(entity), Collections.singletonMap("userId", 1L));
+            context, MybatisCommand.toNonNullMap(entity), Collections.singletonMap("userId", 1L));
 
     // then
-    assertThat(sql).contains("`memo` = null").contains("`name` = 'kim'").contains("`user_id` = 7");
+    // 문장을 통째로 박아 둔다 -- SET 에 남은 것과 빠진 것, 그리고 그 순서를 한 번에 본다.
+    assertThat(sql)
+        .isEqualTo(
+            "UPDATE update_target\nSET `name` = 'kim', `user_id` = 7\nWHERE (`user_id` = 1)");
+    assertThat(sql).doesNotContain("memo");
+  }
+
+  @Test
+  @DisplayName("toNonNullMap 은 값이 null 인 항목만 빼고 toMap 의 순서를 지켜야 한다")
+  void toNonNullMap_ShouldDropOnlyNullsAndKeepOrder() {
+    // given
+    // SET 절 순서는 이 맵의 순회 순서다. toMap 순서(= INSERT 컬럼 순서)에서 벗어나면 같은 엔티티가
+    // INSERT 와 UPDATE 에서 서로 다른 컬럼 순서로 나간다. 해시 용량 문턱에 걸치는 크기들로 확인한다.
+    List<Object> samples = new ArrayList<>();
+    samples.add(new ThreeColumn());
+    samples.add(new FourColumn());
+    samples.add(new FiveColumn());
+    samples.add(new TwelveColumn("a"));
+    samples.add(new TwentyFourColumn());
+
+    FourColumn mixed = new FourColumn();
+    mixed.alpha = "A";
+    mixed.charlie = "C";
+    samples.add(mixed);
+
+    // when / then
+    for (Object sample : samples) {
+      Map<String, Object> full = MybatisCommand.toMap(sample);
+      List<String> expected = new ArrayList<>();
+      for (Map.Entry<String, Object> entry : full.entrySet()) {
+        if (entry.getValue() != null) {
+          expected.add(entry.getKey());
+        }
+      }
+
+      Map<String, Object> nonNull = MybatisCommand.toNonNullMap(sample);
+
+      assertThat(new ArrayList<>(nonNull.keySet()))
+          .as("엔티티: %s", sample.getClass().getSimpleName())
+          .containsExactlyElementsOf(expected);
+      assertThat(nonNull.values()).doesNotContainNull();
+    }
+
+    // 값이 섞인 엔티티에서 남은 값 자체도 그대로여야 한다.
+    assertThat(MybatisCommand.toNonNullMap(mixed))
+        .containsOnlyKeys("alpha", "charlie")
+        .containsEntry("alpha", "A")
+        .containsEntry("charlie", "C");
+  }
+
+  @Test
+  @DisplayName("모든 필드가 null 인 엔티티로 갱신하면 원인을 알 수 있는 예외로 끝나야 한다")
+  void buildUpdateSQL_ShouldExplainWhenEntityHasNothingToSet() throws Exception {
+    // given
+    // toNonNullMap 이 전부 걸러 내면 빈 맵이 되고 기존 가드에 걸린다. 기본 메시지
+    // ('updateMap' is required for update) 만으로는 누가 비웠는지 알 수 없어 두 경로를 함께 짚어 준다.
+    ProviderContext context = providerContextOf(UpdateTargetRepository.class);
+    UpdateTarget empty = new UpdateTarget();
+
+    // when / then
+    assertThatThrownBy(
+            () ->
+                command.buildUpdateSQL(
+                    context,
+                    MybatisCommand.toNonNullMap(empty),
+                    Collections.singletonMap("userId", 1L)))
+        .isInstanceOf(MybatisRepositoryException.class)
+        .hasMessageContaining("'updateMap' is required")
+        .hasMessageContaining("엔티티 경로")
+        .hasMessageContaining("updateMapById");
   }
 
   @Test

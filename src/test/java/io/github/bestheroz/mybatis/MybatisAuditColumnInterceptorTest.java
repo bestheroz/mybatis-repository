@@ -564,6 +564,24 @@ class MybatisAuditColumnInterceptorTest {
   }
 
   @Test
+  @DisplayName("빈 updateMap 은 감사 스탬프만으로 되살아나 수정 일시/수정자만 갱신하는 UPDATE 가 돼야 한다")
+  void update_ShouldReviveEmptyUpdateMapWithStampsOnly() {
+    // given: 엔티티 경로에서 모든 필드가 null 이면 toNonNullMap 이 빈 맵을 넘긴다. 라이브러리의 빈 updateMap
+    // 가드는 프로바이더 안에 있고 이 인터셉터가 그보다 먼저 돌므로, 감사 기능이 켜져 있으면 빈 맵에 스탬프가
+    // 들어가 그 가드에 닿지 않는다. 지금 동작이 그렇다는 사실을 고정한다 -- 처음부터 빈 맵을 거절할지는
+    // 별도 결정이고, 위 테스트가 다루는 "걷어내서 비었다" 와는 다른 경우다.
+    final Map<String, Object> updateMap = mapOf();
+
+    // when
+    final String sql = updateSql(AuditRepo.class, updateMap, mapOf("id", 1L));
+
+    // then: SET 에는 수정 계열 두 컬럼만 있고 예외는 없다
+    assertThat(sql).contains("`updated_by` = 'tester'").contains("`updated_at` = '");
+    assertThat(sql).doesNotContain("`name`").doesNotContain("`memo`").doesNotContain("created_");
+    assertThat(sql).contains("WHERE (`id` = 1)");
+  }
+
+  @Test
   @DisplayName("UPDATE 에서 값이 null 인 키는 그대로 살아남아 SET col = null 로 나가야 한다")
   void update_ShouldKeepNullValuedKeys() {
     // given: 키가 있고 값이 null 이면 "그 컬럼을 NULL 로" 라는 뜻이다. 걸러 내면 컬럼을 비울 방법이 사라진다.

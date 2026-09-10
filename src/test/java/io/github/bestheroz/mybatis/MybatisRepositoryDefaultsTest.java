@@ -412,10 +412,11 @@ class MybatisRepositoryDefaultsTest {
   }
 
   @Test
-  @DisplayName("엔티티로 갱신하면 값이 null 인 필드까지 updateMap 에 담겨야 한다")
-  void updateById_ShouldKeepNullFieldsInUpdateMap() {
+  @DisplayName("엔티티로 갱신하면 값이 null 인 필드는 updateMap 에서 빠져야 한다")
+  void updateById_ShouldDropNullFieldsFromUpdateMap() {
     // given
-    // 껍데기 단계에서 null 필드를 걸러 내면 "null 이면 NULL 로 갱신" 규약이 여기서부터 깨진다.
+    // 엔티티 경로에서 null 은 "이 컬럼은 정하지 않았다" 는 뜻이다. 껍데기가 toMap 을 그대로 넘기면
+    // 호출부가 채우지 않은 컬럼까지 전부 = null 로 덮여, DB DEFAULT 를 쓰는 컬럼이 비워졌다.
     IdRepo repo = new IdRepo();
     TestUser entity = new TestUser();
     entity.userId = 7L;
@@ -425,7 +426,43 @@ class MybatisRepositoryDefaultsTest {
     repo.updateById(entity, 7L);
 
     // then
-    assertThat(repo.call().describe()).contains("name=null").contains("userId=7");
+    // toNonNullMap 은 LinkedHashMap 이라 순서까지 확정된다. 통째로 맞대어 null 키가 새어 들어오면 깨진다.
+    assertThat(repo.call().describe()).isEqualTo("update[{userId=7}, {id=7}]");
+  }
+
+  @Test
+  @DisplayName("updateByMap 도 값이 null 인 필드를 updateMap 에서 빼야 한다")
+  void updateByMap_ShouldDropNullFieldsFromUpdateMap() {
+    // given
+    // updateById 와 updateByMap 은 서로 다른 껍데기다. 한쪽만 고치고 다른 쪽을 toMap 에 둔 채로
+    // 두면 같은 엔티티가 조건에 따라 다르게 갱신되므로 둘 다 따로 못박는다.
+    IdRepo repo = new IdRepo();
+    TestUser entity = new TestUser();
+    entity.userId = 7L;
+    // name 은 null 로 둔다
+
+    // when
+    repo.updateByMap(entity, Collections.<String, Object>singletonMap("name", "kim"));
+
+    // then
+    assertThat(repo.call().describe()).isEqualTo("update[{userId=7}, {name=kim}]");
+  }
+
+  @Test
+  @DisplayName("맵으로 갱신하면 값이 null 인 키는 껍데기를 그대로 통과해야 한다")
+  void updateMapByMap_ShouldKeepNullValuedKeys() {
+    // given
+    // 컬럼을 NULL 로 비울 수 있는 경로는 맵 경로뿐이다. 엔티티 경로에 넣은 null 필터가 여기까지
+    // 번지면 컬럼을 비울 방법이 API 에서 사라진다.
+    IdRepo repo = new IdRepo();
+    Map<String, Object> updateMap = new HashMap<>();
+    updateMap.put("name", null);
+
+    // when
+    repo.updateMapByMap(updateMap, Collections.<String, Object>singletonMap("userId", 7L));
+
+    // then
+    assertThat(repo.call().describe()).isEqualTo("update[{name=null}, {userId=7}]");
   }
 
   @Test
