@@ -187,6 +187,43 @@ mybatis-repository:
 
 > JDBC 는 `ResultSet#getTimestamp` 로 읽을 때 JVM 기본 타임존을 씁니다. 이 설정이 JVM 기본 타임존과 다르면 **저장한 시각과 읽어온 시각이 그 차이만큼 어긋납니다.** 알 수 없는 존 ID 는 조용히 기본값으로 떨어지지 않고 기동을 실패시킵니다.
 
+## 감사 컬럼 (선택)
+
+`createdAt` / `createdBy` / `updatedAt` / `updatedBy` 를 INSERT·UPDATE 때 자동으로 채웁니다. **`MybatisAuditorAware` 빈을 등록해야 켜집니다.** 등록하지 않으면 아무 일도 일어나지 않습니다.
+
+```java
+@Component
+public class MyAuditorAware implements MybatisAuditorAware {
+    @Override
+    public Optional<String> getCurrentAuditor() {
+        // 세션이 없으면 Optional.empty() 를 돌려주세요. 예외를 던지면 안 됩니다.
+        return Optional.ofNullable(currentUserId());
+    }
+}
+```
+
+- **INSERT** — 네 필드를 모두 채웁니다. `insertBatch` 는 모든 행을 같은 시각으로 채웁니다.
+- **UPDATE** — `updatedAt` / `updatedBy` 만 채웁니다. 호출부가 `updateMap` 에 넣은 감사 컬럼 값은 위조 방지를 위해 걷어내고, 생성 계열은 다시 쓰지 않습니다. 그 밖의 키는 값이 `null` 이어도 그대로 둡니다(`SET col = null` 규약 유지).
+- 엔티티에 그 이름의 `@Column` 필드가 없으면 그냥 건너뜁니다. 감사 컬럼이 없는 엔티티도 정상입니다.
+- 감사자가 비어 있으면(`Optional.empty()`) `*_BY` 는 건드리지 않고 일시만 채웁니다. 배치·스케줄러처럼 세션이 없는 경로를 위한 것입니다.
+- 호출부가 넘긴 `updateMap` 은 변형하지 않습니다. 공유 상수를 그대로 넘겨도 안전합니다.
+
+필드 이름은 바꿀 수 있습니다. **DB 컬럼명이 아니라 자바 필드명**입니다.
+
+```yaml
+mybatis-repository:
+  created-at: regDt
+  created-by: regId
+  updated-at: modDt
+  updated-by: modId
+```
+
+지원 타입은 일시가 `Instant` · `LocalDateTime` · `java.util.Date` · `java.sql.Timestamp`, 감사자가 `String` 입니다. 그 밖의 타입이면 조용히 넘어가지 않고 예외를 던집니다 -- 감사 컬럼이 소리 없이 비는 것이 가장 나쁜 결과이기 때문입니다.
+
+> `LocalDateTime` 과 `java.util.Date` / `java.sql.Timestamp` 를 한 스키마에서 함께 쓴다면 `mybatis-repository.timezone` 을 반드시 지정하세요. 지정하지 않으면 앞은 UTC 벽시계, 뒤는 JVM 기본 타임존을 따라 같은 행의 두 컬럼이 어긋납니다.
+
+> `SqlSessionFactoryBean` 을 직접 정의했다면 이 인터셉터 빈을 그 `plugins` 에 손수 넣어야 합니다. `mybatis-spring-boot-starter` 가 만든 `SqlSessionFactory` 를 쓰면 자동으로 붙습니다.
+
 ## 알아두어야 할 것
 
 - **`@Column` 이 없는 필드는 없는 것으로 취급됩니다.** 조회·삽입·수정 대상에서 빠지고, 조건 Map 에 그 필드명을 넣으면 `MybatisRepositoryException` 이 발생합니다.

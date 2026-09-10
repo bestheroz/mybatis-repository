@@ -6,7 +6,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
 
 /**
- * {@code mybatis-repository.timezone} 을 읽어 전역 설정에 반영한다.
+ * {@code mybatis-repository.*} 설정을 읽어 전역 설정에 반영한다. 이름은 처음 용도(타임존)에서 왔고, 지금은 감사 컬럼 필드명도 함께 읽는다.
  *
  * <p>자동 구성 빈의 생성자에서 하지 않는 이유가 있다. 자동 구성은 {@code DeferredImportSelector} 로 등록되어 사용자 빈보다 뒤에 만들어지므로,
  * 소비자가 생성자나 {@code @PostConstruct} 에서 리포지토리를 호출하면 그 시점의 타임존은 아직 기본값이다. 일부 행만 어긋난 채로 저장되고 아무 오류도 나지
@@ -21,9 +21,18 @@ public class MybatisTimezoneInitializer
   /** SQL 리터럴로 찍히는 시각의 기준 타임존. 지정하지 않으면 타입별 기본값을 그대로 쓴다. */
   static final String TIMEZONE_PROPERTY_NAME = "mybatis-repository.timezone";
 
+  /** 감사 컬럼으로 쓸 자바 필드 이름. 지정하지 않으면 기본 이름을 그대로 쓴다. */
+  static final String CREATED_AT_PROPERTY_NAME = "mybatis-repository.created-at";
+
+  static final String CREATED_BY_PROPERTY_NAME = "mybatis-repository.created-by";
+  static final String UPDATED_AT_PROPERTY_NAME = "mybatis-repository.updated-at";
+  static final String UPDATED_BY_PROPERTY_NAME = "mybatis-repository.updated-by";
+
   @Override
   public void initialize(final ConfigurableApplicationContext applicationContext) {
-    applyTimezone(applicationContext.getEnvironment(), MybatisRepositoryProperties.getInstance());
+    final MybatisRepositoryProperties properties = MybatisRepositoryProperties.getInstance();
+    applyTimezone(applicationContext.getEnvironment(), properties);
+    applyAuditFieldNames(applicationContext.getEnvironment(), properties);
   }
 
   /**
@@ -40,6 +49,51 @@ public class MybatisTimezoneInitializer
       return;
     }
     properties.setTimezone(timezone);
+  }
+
+  /**
+   * 감사 컬럼 필드명 넷을 반영한다. 값이 없으면 아무것도 하지 않는다(기본 이름 유지).
+   *
+   * <p>{@code MybatisAutoConfiguration} 도 같은 값을 한 번 더 반영한다. 타임존과 같은 구조이고 이유도 같다 -- 이 초기화기는 {@code
+   * SpringApplication} 이 만든 컨텍스트에서만 돌기 때문에, 직접 만든 컨텍스트나 소비자가 공개 생성자로 인터셉터를 손수 등록한 경우에는 그쪽이 유일한 경로가
+   * 된다. 미설정이 "그대로 두기" 라 두 번 반영해도 결과가 달라지지 않는다.
+   */
+  static void applyAuditFieldNames(
+      final Environment environment, final MybatisRepositoryProperties properties) {
+    if (environment == null) {
+      return;
+    }
+    final String createdAt = auditFieldName(environment, CREATED_AT_PROPERTY_NAME, "createdAt");
+    if (createdAt != null) {
+      properties.setCreatedAt(createdAt);
+    }
+    final String createdBy = auditFieldName(environment, CREATED_BY_PROPERTY_NAME, "createdBy");
+    if (createdBy != null) {
+      properties.setCreatedBy(createdBy);
+    }
+    final String updatedAt = auditFieldName(environment, UPDATED_AT_PROPERTY_NAME, "updatedAt");
+    if (updatedAt != null) {
+      properties.setUpdatedAt(updatedAt);
+    }
+    final String updatedBy = auditFieldName(environment, UPDATED_BY_PROPERTY_NAME, "updatedBy");
+    if (updatedBy != null) {
+      properties.setUpdatedBy(updatedBy);
+    }
+  }
+
+  /**
+   * 케밥 표기와 카멜 표기를 모두 본다. {@code Environment#getProperty} 는 {@code @ConfigurationProperties} 와 달리 완화
+   * 바인딩을 하지 않으므로, yaml 에 {@code createdAt} 으로 적어 둔 값을 케밥 키로만 찾으면 아무 일도 일어나지 않고 아무 오류도 나지 않는다.
+   */
+  private static String auditFieldName(
+      final Environment environment, final String kebabCaseName, final String camelCaseSuffix) {
+    final String kebabCaseValue = environment.getProperty(kebabCaseName);
+    final String value =
+        kebabCaseValue != null
+            ? kebabCaseValue
+            : environment.getProperty("mybatis-repository." + camelCaseSuffix);
+    // 빈 값은 지정하지 않은 것으로 본다. 타임존 쪽과 같은 규칙이다.
+    return value == null || value.trim().isEmpty() ? null : value;
   }
 
   @Override

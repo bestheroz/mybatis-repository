@@ -15,6 +15,13 @@ public class MybatisRepositoryProperties {
   private static final int DEFAULT_MAX_IDENTIFIER_LENGTH = 256;
   private static final ZoneId DEFAULT_ZONE_ID = ZoneId.of("UTC");
 
+  // 감사 컬럼으로 쓸 자바 필드 이름. DB 컬럼명이 아니다 -- 컬럼명은 다른 필드와 똑같이
+  // @Column(name=...) 이나 CamelCase→snake_case 규칙으로 정해진다.
+  private static final String DEFAULT_CREATED_AT = "createdAt";
+  private static final String DEFAULT_CREATED_BY = "createdBy";
+  private static final String DEFAULT_UPDATED_AT = "updatedAt";
+  private static final String DEFAULT_UPDATED_BY = "updatedBy";
+
   // 실제 설정값들.
   // zoneId 와 발행 방식이 같다 -- 기동 시 한 스레드가 쓰고 질의 스레드들이 읽으므로, 쓴 값이
   // 보이도록 volatile 로 둔다. 셋 다 프로그램으로만 바꿀 수 있고 그 호출은 대개 설정 빈에서
@@ -27,6 +34,12 @@ public class MybatisRepositoryProperties {
   // 예전과 똑같은 기본값을 쓴다(getZoneId / getDateZoneId 참고). 기동 시 한 번 설정되고 이후에는
   // 읽기만 하지만, 설정 스레드와 SQL 생성 스레드가 다르므로 가시성을 위해 volatile 로 둔다.
   private volatile ZoneId zoneId = null;
+
+  // 감사 컬럼 필드명. 위의 값들과 발행 방식이 같아 volatile 로 둔다.
+  private volatile String createdAt = DEFAULT_CREATED_AT;
+  private volatile String createdBy = DEFAULT_CREATED_BY;
+  private volatile String updatedAt = DEFAULT_UPDATED_AT;
+  private volatile String updatedBy = DEFAULT_UPDATED_BY;
 
   // 싱글톤 인스턴스 (Spring이 없는 환경에서 사용)
   private static final MybatisRepositoryProperties INSTANCE = new MybatisRepositoryProperties();
@@ -125,12 +138,68 @@ public class MybatisRepositoryProperties {
     }
   }
 
+  /**
+   * 생성 일시가 담기는 자바 필드 이름. 기본값 {@code createdAt}.
+   *
+   * <p>{@link MybatisAuditColumnInterceptor} 가 INSERT 때만 채운다. 엔티티에 이 이름의 {@code @Column} 필드가 없으면 아무
+   * 일도 일어나지 않는다 -- 감사 컬럼이 없는 엔티티가 정상이기 때문이다.
+   */
+  public String getCreatedAt() {
+    return createdAt;
+  }
+
+  public void setCreatedAt(String createdAt) {
+    this.createdAt = requireFieldName(createdAt, "createdAt");
+  }
+
+  /** 생성자 식별자가 담기는 자바 필드 이름. 기본값 {@code createdBy}. INSERT 때만 채운다. */
+  public String getCreatedBy() {
+    return createdBy;
+  }
+
+  public void setCreatedBy(String createdBy) {
+    this.createdBy = requireFieldName(createdBy, "createdBy");
+  }
+
+  /** 수정 일시가 담기는 자바 필드 이름. 기본값 {@code updatedAt}. INSERT 와 UPDATE 모두에서 채운다. */
+  public String getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public void setUpdatedAt(String updatedAt) {
+    this.updatedAt = requireFieldName(updatedAt, "updatedAt");
+  }
+
+  /** 수정자 식별자가 담기는 자바 필드 이름. 기본값 {@code updatedBy}. INSERT 와 UPDATE 모두에서 채운다. */
+  public String getUpdatedBy() {
+    return updatedBy;
+  }
+
+  public void setUpdatedBy(String updatedBy) {
+    this.updatedBy = requireFieldName(updatedBy, "updatedBy");
+  }
+
+  /**
+   * 빈 이름을 받아 두면 그 이름으로는 어떤 필드도 찾지 못해 감사 컬럼이 조용히 비게 된다. {@link #setTimezone(String)} 과 같은 계열의 예외로 즉시
+   * 끊는다.
+   */
+  private static String requireFieldName(final String fieldName, final String propertyName) {
+    if (fieldName == null || fieldName.trim().isEmpty()) {
+      throw new MybatisRepositoryException(propertyName + " must not be empty");
+    }
+    return fieldName.trim();
+  }
+
   // 기본값 복원 메서드
   public void resetToDefaults() {
     this.maxInClauseSize = DEFAULT_MAX_IN_CLAUSE_SIZE;
     this.maxStringValueLength = DEFAULT_MAX_STRING_VALUE_LENGTH;
     this.maxIdentifierLength = DEFAULT_MAX_IDENTIFIER_LENGTH;
     this.zoneId = null;
+    this.createdAt = DEFAULT_CREATED_AT;
+    this.createdBy = DEFAULT_CREATED_BY;
+    this.updatedAt = DEFAULT_UPDATED_AT;
+    this.updatedBy = DEFAULT_UPDATED_BY;
   }
 
   @Override
@@ -144,6 +213,14 @@ public class MybatisRepositoryProperties {
         + maxIdentifierLength
         + ", zoneId="
         + (zoneId != null ? zoneId : "(unset)")
-        + '}';
+        + ", auditFields=["
+        + createdAt
+        + ", "
+        + createdBy
+        + ", "
+        + updatedAt
+        + ", "
+        + updatedBy
+        + "]}";
   }
 }

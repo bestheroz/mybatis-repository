@@ -5,6 +5,30 @@
       "type": "java.lang.String",
       "description": "Zone ID used as the wall clock for datetime literals in generated SQL (for example Asia/Seoul). Defaults to UTC; java.util.Date and java.sql.Timestamp fall back to the JVM default zone while this is unset.",
       "defaultValue": "UTC"
+    },
+    {
+      "name": "mybatis-repository.created-at",
+      "type": "java.lang.String",
+      "description": "Java field name that holds the creation timestamp. Filled on INSERT only, and only when a MybatisAuditorAware bean is registered. Entities without such a field are left alone.",
+      "defaultValue": "createdAt"
+    },
+    {
+      "name": "mybatis-repository.created-by",
+      "type": "java.lang.String",
+      "description": "Java field name that holds the creator identifier. Filled on INSERT only, and only when a MybatisAuditorAware bean is registered. Must be a String field.",
+      "defaultValue": "createdBy"
+    },
+    {
+      "name": "mybatis-repository.updated-at",
+      "type": "java.lang.String",
+      "description": "Java field name that holds the modification timestamp. Filled on INSERT and UPDATE, and only when a MybatisAuditorAware bean is registered.",
+      "defaultValue": "updatedAt"
+    },
+    {
+      "name": "mybatis-repository.updated-by",
+      "type": "java.lang.String",
+      "description": "Java field name that holds the modifier identifier. Filled on INSERT and UPDATE, and only when a MybatisAuditorAware bean is registered. Must be a String field.",
+      "defaultValue": "updatedBy"
     }
   ]
 }

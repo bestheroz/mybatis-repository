@@ -187,6 +187,43 @@ Some types deliberately do not follow the setting. `LocalDateTime`/`LocalDate`/`
 
 > JDBC reads timestamps back with `ResultSet#getTimestamp`, which uses the JVM default time zone. If this setting differs from that zone, **stored and retrieved instants drift apart by exactly that offset.** An unknown zone ID fails startup rather than silently falling back to the default.
 
+## Audit columns (optional)
+
+`createdAt` / `createdBy` / `updatedAt` / `updatedBy` are filled in on INSERT and UPDATE. **Registering a `MybatisAuditorAware` bean is what turns this on**; without one, nothing happens.
+
+```java
+@Component
+public class MyAuditorAware implements MybatisAuditorAware {
+    @Override
+    public Optional<String> getCurrentAuditor() {
+        // Return Optional.empty() when there is no session. Never throw.
+        return Optional.ofNullable(currentUserId());
+    }
+}
+```
+
+- **INSERT** — all four fields are stamped. `insertBatch` gives every row the same instant.
+- **UPDATE** — only `updatedAt` / `updatedBy` are stamped. Audit keys the caller put into `updateMap` are dropped so they cannot be forged, and the creation-side pair is never rewritten. Every other entry is passed through untouched, including one whose value is `null` (the `SET col = null` contract still holds).
+- A name that has no `@Column` field on the entity is skipped. Entities without audit columns are normal.
+- An empty auditor (`Optional.empty()`) leaves the `*_BY` columns alone and still stamps the timestamps — for batch jobs, schedulers and other session-less paths.
+- The `updateMap` you pass in is never modified. Handing over a shared constant is safe.
+
+The four names are configurable, and they are **Java field names, not column names**.
+
+```yaml
+mybatis-repository:
+  created-at: regDt
+  created-by: regId
+  updated-at: modDt
+  updated-by: modId
+```
+
+Timestamps may be `Instant`, `LocalDateTime`, `java.util.Date` or `java.sql.Timestamp`; auditors must be `String`. Any other type throws instead of being skipped — an audit column that is quietly left empty is the worst possible outcome.
+
+> If one schema mixes `LocalDateTime` with `java.util.Date` / `java.sql.Timestamp`, set `mybatis-repository.timezone`. Left unset, the former is stamped as a UTC wall clock while the latter follows the JVM default zone, so two columns of the same row disagree.
+
+> If you define `SqlSessionFactoryBean` yourself, add this interceptor bean to its `plugins`. A `SqlSessionFactory` built by `mybatis-spring-boot-starter` picks it up automatically.
+
 ## Things worth knowing
 
 - **A field without `@Column` does not exist** as far as this library is concerned. It is skipped by select, insert and update, and naming it in a condition map throws `MybatisRepositoryException`.
