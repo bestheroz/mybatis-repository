@@ -228,7 +228,10 @@ public class MybatisCommand {
     // VALUES ( … ), ( … ), …
     // 행마다 List 를 만들어 모아 두었다가 다시 잇지 않고 곧바로 이어 붙인다.
     // 1000행 x 20컬럼 배치라면 리스트 1000개와 중간 문자열 2만 개가 통째로 사라진다.
-    final StringBuilder values = new StringBuilder(entities.size() * columns.size() * 16);
+    // 곱을 int 로 계산하면 셀이 약 1.3억 개를 넘을 때 음수로 뒤집혀 NegativeArraySizeException 이 난다.
+    // 어차피 초기 크기 힌트일 뿐이므로 long 으로 계산해 적당한 상한에서 자른다.
+    final int sizeHint = (int) Math.min((long) entities.size() * columns.size() * 16L, 1L << 20);
+    final StringBuilder values = new StringBuilder(sizeHint);
     boolean firstRow = true;
     for (T entity : entities) {
       Map<String, Object> entityMap = toMap(entity);
@@ -317,8 +320,9 @@ public class MybatisCommand {
     }
 
     List<Field> fields = MybatisEntityHelper.getAllNonExcludedFields(source.getClass());
-    // 크기를 미리 지정하면 안 된다. buildInsertSQL 이 이 맵의 entrySet 을 그대로 순회하므로
-    // 버킷 순서가 곧 INSERT 컬럼 순서다. 용량이 달라지면 컬럼 순서가 바뀐다(@Column 3, 4, 5, 12, 24개 등에서 확인).
+    // 크기를 미리 지정하면 안 된다. buildInsertSQL 과 (updateById 경로의) buildUpdateSQL 이 이 맵의
+    // entrySet 을 그대로 순회하므로, 버킷 순서가 곧 INSERT 컬럼 순서이자 UPDATE SET 절 순서다.
+    // 용량이 달라지면 그 순서가 바뀐다(@Column 3, 4, 5, 12, 24개 등에서 확인).
     // 리해시 한 번을 아끼자고 생성되는 SQL 을 바꿀 이유는 없다.
     Map<String, Object> map = new HashMap<>();
 
