@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.bestheroz.mybatis.exception.MybatisRepositoryException;
 import java.time.ZoneId;
+import java.util.Collections;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,9 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
 
 /**
  * 타임존이 <b>사용자 빈보다 먼저</b> 적용되는지 확인한다.
@@ -70,6 +73,30 @@ class MybatisTimezoneBootstrapTest {
         .hasStackTraceContaining(MybatisRepositoryException.class.getName())
         .hasStackTraceContaining("Invalid timezone: Asia/Nowhere");
     assertThat(ProbeConfiguration.observedAtPostConstruct).isNull();
+  }
+
+  @Test
+  @DisplayName("SpringApplication 을 거치지 않은 컨텍스트에서도 반영되어야 한다")
+  void timezone_ShouldApplyInHandBuiltContext() {
+    // given: spring.factories 의 초기화기는 SpringApplication 만 읽으므로 이 경로에서는 실행되지 않는다
+    try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+      context
+          .getEnvironment()
+          .getPropertySources()
+          .addFirst(
+              new MapPropertySource(
+                  "test",
+                  Collections.<String, Object>singletonMap(
+                      MybatisTimezoneInitializer.TIMEZONE_PROPERTY_NAME, "Asia/Seoul")));
+      context.register(MybatisAutoConfiguration.class);
+
+      // when
+      context.refresh();
+
+      // then
+      assertThat(MybatisRepositoryProperties.getInstance().getZoneId())
+          .isEqualTo(ZoneId.of("Asia/Seoul"));
+    }
   }
 
   /**

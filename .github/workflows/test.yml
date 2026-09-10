@@ -4,6 +4,12 @@ on:
     branches: [ '**' ]
     tags-ignore: [ '**' ]
 
+# 같은 브랜치에 연속으로 푸시하면 이전 실행을 취소한다.
+# 배지 커밋 푸시가 뒤늦게 non-fast-forward 로 거절되는 것을 막는다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GITHUB_TOKEN: ${{ secrets.WORKFLOW_GITHUB_TOKEN }}
 
@@ -50,4 +56,7 @@ jobs:
         with:
           default_author: github_actions
           message: 'Update coverage badge'
-          add: '*.svg'
+          add: '.github/badges/*.svg'
+          # 실행 중 main 이 앞서 나간 경우(예: tag.yml 의 버전 커밋) 리베이스 후 푸시
+          pull: '--rebase --autostash'
+          push_attempts: '3'  # 실패하면 다시 pull 하고 재시도

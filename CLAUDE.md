@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MyBatis Repository is a Java 8 library published to Maven Central (`io.github.bestheroz:mybatis-repository`). It gives MyBatis mappers generic CRUD methods — no SQL, no XML — by generating statements at runtime from JPA annotations on the entity.
 
-All production code lives in `src/main/java/io/github/bestheroz/mybatis/` — 11 files, ~2,150 lines. There is no sample app and no database in this repo.
+All production code lives in `src/main/java/io/github/bestheroz/mybatis/` — 12 files, ~2,290 lines. There is no sample app and no database in this repo.
 
 ## Build and Test
 
@@ -39,7 +39,7 @@ Targeting Java 8 was reviewed and kept on purpose, to keep the library usable by
 
 The review that settled it: bumping to 11 buys only `Set.of`/`List.of`/`var` here (~10 lines, no behaviour change) while cutting off Java 8 users; 17 additionally buys `instanceof` pattern matching, which would tidy the 12-branch cast chain in `MybatisClauseBuilder.formatValueForSQL`, but a 17 target effectively means "Spring Boot 3 only" — which would make the whole `javax`/`jakarta` dual-namespace machinery pointless. Raising the target also does **not** improve runtime performance; that is decided by the consumer's JVM, not by the bytecode level. If the target is ever raised, skip 11, go straight to 17, and pair it with dropping `javax` support as a 1.0 breaking release.
 
-The larger wins are version-independent and still open: the 838 duplicated lines across the twin repository interfaces (39% of the source), the string-interpolated SQL, and the untested SQL-generation classes.
+The larger wins are version-independent and still open: the 838 duplicated lines across the twin repository interfaces (37% of the source), the string-interpolated SQL, and the untested SQL-generation classes.
 
 ### Java 8 compatibility is enforced by `--release`, not by `targetCompatibility`
 
@@ -61,6 +61,8 @@ Two consequences: `compileOnly` does not reach the test classpath, so anything a
 
 Do not hand-edit `VERSION` in `build.gradle`. Pushing a tag matching `X.Y.Z` triggers `.github/workflows/tag.yml`, which rewrites `VERSION`, runs `./gradlew publishToMavenCentral` with the GPG/Maven Central secrets, and commits the bumped `build.gradle` back to `main`. Every push to any branch also runs `test.yml`, which regenerates and auto-commits the JaCoCo badge under `.github/badges/`.
 
+That badge job pushes back to the branch it ran on, so two pushes seconds apart used to leave the older run committing onto a parent that is no longer the tip — it failed with `refs/heads/main:refs/heads/main [rejected] (non-fast-forward)` and the badge silently went unrefreshed. Three guards now cover it and all three are load-bearing: `concurrency` with `cancel-in-progress` drops the superseded run, `pull: '--rebase --autostash'` replays the badge commit onto whatever landed meanwhile (`tag.yml`'s version bump is the one that races legitimately), and `push_attempts: '3'` re-pulls between attempts to close the gap between that pull and the push. The badge push has no other retry path.
+
 The `publishToMavenCentral()` call inside the `mavenPublishing` block is what registers the Central repository and creates that task. It was once deleted during a plugin upgrade, which silently removed the task and would have failed the next release with `Task 'publishToMavenCentral' not found`. If you touch the publishing block, confirm the task still exists:
 
 ```bash
@@ -81,7 +83,7 @@ Provider methods receive a `ProviderContext`; `MybatisEntityHelper.extractEntity
 
 ### JPA annotations are read by name, not by type
 
-`MybatisEntityHelper` inspects `annotationType().getName()` and matches the strings `jakarta.persistence.Column` / `javax.persistence.Column` (and the `Table` equivalents), invoking `name()` reflectively. That is deliberate: the library ships both `javax` and `jakarta` APIs as `implementation` deps and works under Spring Boot 2.x and 3.x without a compile-time choice. Keep new annotation handling reflective and dual-named.
+`MybatisEntityHelper` inspects `annotationType().getName()` and matches the strings `jakarta.persistence.Column` / `javax.persistence.Column` (and the `Table` equivalents), invoking `name()` reflectively. That is deliberate: the library compiles against both `javax` and `jakarta` APIs (as `compileOnly`) and works under Spring Boot 2.x and 3.x without a compile-time choice. Keep new annotation handling reflective and dual-named.
 
 Consequences to remember:
 - **Only fields carrying `@Column` are mapped.** A field without it is invisible to select/insert/update, and passing its name in a condition map throws `MybatisRepositoryException`.
@@ -103,7 +105,7 @@ Consequences to remember:
 - `escapeSingleQuote` — escapes `'`, backslash, NUL, newline/CR/tab/backspace/formfeed, `"`, and SUB (`\u001A`) for every value that reaches the SQL string.
 - `wrapIdentifier` → `isValidIdentifier` — allowlist regex `^[a-zA-Z][a-zA-Z0-9_]*$`, a large SQL-keyword blocklist, and a length cap, before wrapping in backticks.
 
-Any new value type in `formatValueForSQL`, or any new clause that emits a column name, must route through these. `MybatisRepositoryProperties` caps blast radius (`maxInClauseSize` 1000, `maxStringValueLength` 4000, `maxIdentifierLength` 256) and also holds `zoneId`, the wall clock used for datetime literals (default UTC). It is a plain `getInstance()` singleton, **not** bound with `@ConfigurationProperties`; the size limits remain programmatic-only, while `zoneId` is the one value read from `application.yml` (`mybatis-repository.timezone`, declared in `META-INF/additional-spring-configuration-metadata.json` for IDE completion) — see the registration note below for why that happens in an `EnvironmentPostProcessor` and not in a bean.
+Any new value type in `formatValueForSQL`, or any new clause that emits a column name, must route through these. `MybatisRepositoryProperties` caps blast radius (`maxInClauseSize` 1000, `maxStringValueLength` 4000, `maxIdentifierLength` 256) and also holds `zoneId`, the wall clock used for datetime literals (default UTC). It is a plain `getInstance()` singleton, **not** bound with `@ConfigurationProperties`; the size limits remain programmatic-only, while `zoneId` is the one value read from `application.yml` (`mybatis-repository.timezone`, declared in `META-INF/additional-spring-configuration-metadata.json` for IDE completion) — see the registration note below for why that happens in an `ApplicationContextInitializer` and not in a bean.
 
 `zoneId` is `null` when unset, and that null is load-bearing: `getZoneId()` (used by `Instant`, `OffsetDateTime`, ISO-8601 strings) falls back to UTC, while `getDateZoneId()` (used by the `java.util.Date` branch) falls back to `ZoneId.systemDefault()`. Those are the two different defaults those paths shipped with before the setting existed, so a consumer who configures nothing gets byte-identical SQL, and one who configures a zone gets a single wall clock for every type. Collapsing the two getters into one would silently move stored values for somebody. The string setter is named `setTimezone`, not an overload of `setZoneId`, because a same-named overload makes `setZoneId(null)` ambiguous and gives JavaBean binding two candidates.
 
@@ -126,6 +128,8 @@ Backtick identifier quoting, `INSTR` / `RIGHT` / `CHAR_LENGTH` for string condit
 **Do not move it into a bean constructor.** Auto-configuration is registered through a `DeferredImportSelector`, so its beans are created after every user bean; a consumer that queries from a constructor, `@PostConstruct`, or `InitializingBean` would write those rows with the default zone while the rest of the app writes the configured one — silently, with no error. An initializer runs before refresh, which closes that window.
 
 **Do not switch it to `EnvironmentPostProcessor`,** which is the more obvious hook. Boot 4 moved that interface from `org.springframework.boot.env` to `org.springframework.boot`, so whichever package you compile and register against, the other major silently ignores the registration — verified against 4.2.0-M1, whose jar has no `boot.env.EnvironmentPostProcessor` at all. `ApplicationContextInitializer` is a Spring Framework interface and keeps its name across Boot 2, 3 and 4. It returns `LOWEST_PRECEDENCE` so any initializer that contributes property sources has already run.
+
+The initializer only covers contexts built by `SpringApplication`, because that is what loads `spring.factories` initializers — so `MybatisAutoConfiguration` also implements `EnvironmentAware` and applies the same value. That is not redundancy to trim: it restores a hand-built `AnnotationConfigApplicationContext` (classic non-Boot Spring, or a WAR that bypasses `SpringBootServletInitializer`), where the initializer never runs. Applying twice is safe precisely because unset is `null` — both paths compute the same value. Two consequences worth knowing: `ApplicationContextRunner` loads neither path's registration and needs `withInitializer(...)` explicitly (`@SpringBootTest` is fine, it builds a real `SpringApplication`), and `spring.autoconfigure.exclude` no longer switches the timezone off, since the initializer is not part of the auto-configuration.
 
 Note that `zoneId` lands in a process-wide singleton, so two Spring contexts in one JVM (tests, multi-tenant setups) share the last value written.
 

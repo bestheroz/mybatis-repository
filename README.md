@@ -5,37 +5,38 @@
 ![Coverage](.github/badges/jacoco.svg)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/bestheroz/mybatis-repository/blob/main/LICENSE)
 
-## 개요
+[English](README_eng.md)
 
-**MyBatis Repository**는 MyBatis를 통해 간단한 CRUD(생성, 조회, 업데이트, 삭제) SQL 작업을 자동으로 생성하고 실행할 수 있도록 도와주는 자바 라이브러리입니다. 사전에 정의된 함수를 호출함으로써 개발자는 보일러플레이트 코드를 크게 줄이고 생산성을 향상시킬 수 있습니다.
+MyBatis 매퍼에 CRUD 메서드를 붙여주는 자바 라이브러리입니다. SQL 도 XML 도 작성하지 않고, 엔티티에 붙은 JPA 애노테이션만 읽어 런타임에 SQL 을 생성합니다.
 
-## 주요 기능
+```java
+@Mapper
+public interface UserRepository extends MybatisRepository<User> {}
+```
 
-- **제네릭 리포지토리 인터페이스**: 제네릭 CRUD 작업을 위한 `MybatisRepository<T>` 인터페이스 제공.
-- **동적 SQL 생성**: `MybatisCommand`를 사용하여 입력 파라미터 기반으로 동적으로 SQL 쿼리 빌드.
-- **유연한 쿼리 메서드**: 필터링, 정렬, 중복 선택, 페이징 등의 옵션을 지원하는 다양한 쿼리 메서드 제공.
-- **배치 작업 지원**: 다수의 엔티티를 한 번에 삽입할 수 있는 배치 삽입 기능.
-- **구성 옵션**: 구성 파일을 통해 특정 필드를 SQL 작업에서 제외할 수 있음.
-- **Spring Boot와의 통합**: Spring Boot 애플리케이션과 원활하게 통합.
+이 한 줄로 조회·필터·정렬·페이징·배치삽입·수정·삭제까지 37개 메서드가 생깁니다. 구현할 것은 없습니다.
 
 ## 요구 사항
 
-- **Java**: 1.8 이상
-- **Spring Boot**: 2.x 이상
-- **MyBatis Spring Boot Starter**: 2.x 이상
-- (추가지원) **Kotlin**: 1.x 이상
+|             |                                                          |
+| ----------- | -------------------------------------------------------- |
+| Java        | 8 이상                                                     |
+| Spring Boot | 2.x (`javax.persistence`) 또는 3.x (`jakarta.persistence`)  |
+| MyBatis     | `mybatis-spring-boot-starter`                             |
+| DBMS        | MySQL · MariaDB                                           |
+| Kotlin      | 1.x 이상 (선택)                                             |
 
-## 설치 방법
+> **DBMS 제약**: 생성되는 SQL 이 백틱 인용과 `INSTR` / `RIGHT` / `CHAR_LENGTH` / `LIMIT ... OFFSET` 을 사용합니다. PostgreSQL·Oracle 에서는 동작하지 않습니다.
 
-`build.gradle`에 다음 의존성을 추가하세요:
+이 라이브러리는 **런타임 의존성이 없습니다.** Spring Boot, MyBatis, JPA API 는 여러분 프로젝트에 이미 있는 것을 그대로 씁니다. `javax` 를 쓰든 `jakarta` 를 쓰든 추가 설정이 필요 없습니다.
+
+## 설치
 
 ```groovy
 dependencies {
     implementation 'io.github.bestheroz:mybatis-repository:0.9.0'
 }
 ```
-
-또는 `pom.xml`에 다음 의존성을 추가하세요:
 
 ```xml
 <dependency>
@@ -45,9 +46,131 @@ dependencies {
 </dependency>
 ```
 
-## 설정
+## 시작하기
 
-### `application.yml`
+**1. 엔티티** — `@Column` 이 붙은 필드만 매핑됩니다.
+
+```java
+@Data
+@Table(name = "users")
+public class User {
+    @Column private Long id;
+    @Column private String loginId;
+    @Column private String name;
+    @Column private Boolean removedFlag;
+    @Column private Instant createdAt;
+}
+```
+
+`@Table` 이 없으면 클래스명을, `@Column(name = ...)` 이 없으면 필드명을 snake_case 로 바꿔 씁니다. (`removedFlag` → `removed_flag`)
+
+**2. 리포지토리** — 인터페이스만 선언합니다.
+
+```java
+@Mapper
+@Repository
+public interface UserRepository extends MybatisRepository<User> {}
+```
+
+자동 증가 PK 가 없는 테이블이라면 `MybatisNoIdRepository<User>` 를 쓰세요. `@Options(useGeneratedKeys = true)` 만 빠졌을 뿐 메서드 구성은 같습니다.
+
+**3. 사용**
+
+```java
+List<User> users = userRepository.getItemsByMapOrderByLimitOffset(
+        Map.of("removedFlag", false, "name:contains", "kim"),
+        List.of("name", "-createdAt"),
+        10, 0);
+```
+
+```sql
+SELECT `id`, `login_id`, `name`, `removed_flag`, `created_at` FROM users
+ WHERE (`removed_flag` = false AND INSTR(`name`, 'kim') > 0)
+ ORDER BY `name` ASC, `created_at` DESC
+ LIMIT 10 OFFSET 0
+```
+
+## 조회 메서드 — 이름이 곧 시그니처
+
+25개 조회 메서드는 아래 조각들의 조합입니다. 필요한 조각만 이어 붙인 이름을 부르면 됩니다.
+
+```
+get ⟨Distinct|Target⟩ Items ⟨ByMap⟩ ⟨OrderBy⟩ ⟨LimitOffset⟩
+```
+
+| 조각           | 파라미터                    | 생략하면    |
+| ------------- | ------------------------- | ---------- |
+| `Distinct`    | `Set<String>` 필드명        | 전체 컬럼    |
+| `Target`      | `Set<String>` 필드명        | 전체 컬럼    |
+| `ByMap`       | `Map<String, Object>` 조건  | 조건 없음    |
+| `OrderBy`     | `List<String>` 정렬         | 정렬 없음    |
+| `LimitOffset` | `Integer limit, offset`    | 전체 행     |
+
+```java
+userRepository.getItems();                                    // 전체
+userRepository.getItemsByMap(where);                          // 조건
+userRepository.getItemsOrderByLimitOffset(order, 10, 0);      // 정렬 + 페이징
+userRepository.getDistinctItemsByMap(Set.of("name"), where);  // DISTINCT
+userRepository.getTargetItems(Set.of("id", "name"));          // 특정 컬럼만
+```
+
+파라미터는 이름에 등장하는 순서 그대로 넘깁니다. `Distinct` 와 `Target` 을 함께 쓰는 조합은 `getDistinctAndTargetItemsByMapOrderByLimitOffset` 하나만 있습니다.
+
+### 정렬
+
+`List<String>` 에 필드명을 넣고, 내림차순은 `-` 를 앞에 붙입니다.
+
+```java
+List.of("name", "-createdAt")   // ORDER BY `name` ASC, `created_at` DESC
+```
+
+## 단건 · 개수 · 쓰기
+
+| 메서드                        | 설명                    |
+| ---------------------------- | ---------------------- |
+| `getItemById(Long)`          | `Optional<T>`          |
+| `getItemByMap(Map)`          | `Optional<T>`          |
+| `countAll()`                 | 전체 행 수               |
+| `countByMap(Map)`            | 조건에 맞는 행 수          |
+| `insert(T)`                  | 단건 삽입                |
+| `insertBatch(List<T>)`       | 한 문장으로 다건 삽입       |
+| `updateById(T, Long)`        | 엔티티의 모든 필드로 갱신    |
+| `updateByMap(T, Map)`        | 엔티티의 모든 필드로 조건 갱신 |
+| `updateMapById(Map, Long)`   | 지정한 필드만 갱신          |
+| `updateMapByMap(Map, Map)`   | 지정한 필드만 조건 갱신      |
+| `deleteById(Long)`           | 단건 삭제                |
+| `deleteByMap(Map)`           | 조건 삭제                |
+
+## 조건 (WHERE)
+
+키는 `필드명` 또는 `필드명:조건타입` 입니다. 조건타입을 생략하면 `eq` 입니다.
+
+```java
+Map.of(
+    "removedFlag", false,        // `removed_flag` = false
+    "name:contains", "kim",      // INSTR(`name`, 'kim') > 0
+    "id:in", Set.of(1L, 2L),     // `id` IN (1, 2)
+    "deletedAt:null", null       // `deleted_at` IS NULL
+);
+```
+
+| 조건타입                    | 생성 SQL                                |
+| -------------------------- | -------------------------------------- |
+| 생략 · `eq`                 | `` `col` = v ``                        |
+| `ne` · `not`                | `` `col` <> v ``                       |
+| `in`                        | `` `col` IN (…) ``                     |
+| `notIn`                     | `` `col` NOT IN (…) ``                 |
+| `null`                      | `` `col` IS NULL ``                    |
+| `notNull`                   | `` `col` IS NOT NULL ``                |
+| `contains`                  | `` INSTR(`col`, v) > 0 ``              |
+| `notContains`               | `` INSTR(`col`, v) = 0 ``              |
+| `startsWith`                | `` INSTR(`col`, v) = 1 ``              |
+| `endsWith`                  | `` RIGHT(`col`, CHAR_LENGTH(v)) = v `` |
+| `lt` · `lte` · `gt` · `gte` | `` `col` < <= > >= v ``                |
+
+`in` 과 `notIn` 은 **`Set` 만** 받습니다. `List` 를 넘기면 예외가 발생하고, 기본 상한은 1,000개입니다.
+
+## 설정
 
 시각 값은 바인드 파라미터가 아니라 SQL 리터럴로 그대로 들어갑니다. 그래서 어느 타임존의 벽시계를 찍는지가 곧 DB 에 저장되는 값이 됩니다.
 
@@ -58,562 +181,24 @@ mybatis-repository:
 
 지정하면 `Instant`, `OffsetDateTime`, ISO8601 문자열, `Date`/`Timestamp` 가 모두 같은 벽시계를 씁니다. 지정하지 않았을 때의 기본값은 타입마다 예전 그대로입니다 -- `Instant` 계열은 `UTC`, `Date`/`Timestamp` 는 JVM 기본 타임존입니다. (`LocalDateTime`/`LocalDate` 는 애초에 벽시계 값이라 이 설정과 무관합니다.)
 
+> `@SpringBootTest` 에서는 그대로 동작하지만, `ApplicationContextRunner` 는 `spring.factories` 의 초기화기를 로드하지 않아 이 설정이 적용되지 않습니다. 러너로 검증하려면 `withInitializer(new MybatisTimezoneInitializer())` 를 직접 등록하세요.
+
 > JDBC 는 `ResultSet#getTimestamp` 로 읽을 때 JVM 기본 타임존을 씁니다. 이 설정이 JVM 기본 타임존과 다르면 **저장한 시각과 읽어온 시각이 그 차이만큼 어긋납니다.** 알 수 없는 존 ID 는 조용히 기본값으로 떨어지지 않고 기동을 실패시킵니다.
 
-## 사용 방법
-
-### 리포지토리 정의
-
-엔티티에 대한 리포지토리 인터페이스를 `MybatisRepository<T>`를 확장하여 생성합니다.
-
-```java
-@Mapper
-@Repository
-public interface UserRepository extends MybatisRepository<User> {}
-```
-
-Id 를 가지지않은 엔티티의 리포지토리는 아래와 같이 설정해주세요.<br>
-(`@InsertProvider` 에 `@Options(useGeneratedKeys = true, keyProperty = "id")` 가 제거되어 있습니다.)
-
-```java
-@Mapper
-@Repository
-public interface UserRepository extends MybatisNoIdRepository<User> {}
-```
-
-### 서비스 생성
-
-서비스 계층에서 리포지토리를 활용하여 CRUD 작업을 수행합니다.
-
-```java
-@Service
-@Transactional
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
-
-    @Transactional(readOnly = true)
-    public ListResult<UserDto.Response> getUserList(UserDto.Request request) {
-        long count = this.userRepository.countByMap(Map.of("removedFlag", false));
-        List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(
-                Map.of("removedFlag", false),
-                List.of("-id"),
-                request.getPageSize(),
-                (request.getPage() - 1) * request.getPageSize());
-        // 추가적인 작업...
-    }
-
-    @Transactional(readOnly = true)
-    public UserDto.Response getUser(Long id) {
-        return this.userRepository.getItemById(id)
-            .map(UserDto.Response::of)
-            .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
-    }
-
-    public UserDto.Response createUser(final UserCreateDto.Request request, Operator operator) {
-        if (this.userRepository.countByMap(
-                Map.of("loginId", request.getLoginId(), "removedFlag", false))
-                > 0) {
-            throw new RequestException400(ExceptionCode.ALREADY_JOINED_ACCOUNT);
-        }
-        User user = request.toEntity(operator);
-        this.userRepository.insert(user);
-        // 추가적인 작업...
-    }
-
-    public UserDto.Response updateUser(
-            final Long id, final UserUpdateDto.Request request, Operator operator) {
-        User user =
-                this.userRepository
-                        .getItemById(id)
-                        .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
-        if (user.getRemovedFlag()) throw new RequestException400(ExceptionCode.UNKNOWN_USER);
-
-        if (this.userRepository.countByMap(
-                Map.of("loginId", request.getLoginId(), "removedFlag", false, "id:not", id))
-                > 0) {
-            throw new RequestException400(ExceptionCode.ALREADY_JOINED_ACCOUNT);
-        }
-
-        user.update(
-                request.getLoginId(),
-                request.getPassword(),
-                request.getName(),
-                request.getUseFlag(),
-                request.getAuthorities(),
-                operator);
-        this.userRepository.updateById(user, user.getId());
-        // 추가적인 작업...
-    }
-
-    public void deleteUser(final Long id, Operator operator) {
-        User user = this.userRepository
-                        .getItemById(id)
-                        .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
-        if (user.getRemovedFlag()) throw new RequestException400(ExceptionCode.UNKNOWN_USER);
-        if (user.getId().equals(operator.getId())) {
-            throw new RequestException400(ExceptionCode.CANNOT_REMOVE_YOURSELF);
-        }
-        user.remove(operator);
-        this.userRepository.updateById(user, user.getId());
-        // 추가적인 작업...
-    }
-
-    // 추가적인 CRUD 메서드...
-}
-```
-
-### 사용 가능한 리포지토리 메서드
-
-#### 1. 기본 조회 메서드
-
-```java
-// List<User> users = this.userRepository.getItems()
-List<User> users = this.userRepository.getItems();
-// SQL: SELECT * FROM users;
-
-// List<User> users = this.userRepository.getItemsLimitOffset(limit, offset)
-List<User> users = this.userRepository.getItemsLimitOffset(10, 0);
-// SQL: SELECT * FROM users LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getItemsOrderBy(List<String>)
-List<User> users = this.userRepository.getItemsOrderBy(List.of("name", "-id"));
-// SQL: SELECT * FROM users ORDER BY name ASC, id DESC;
-
-// List<User> users = this.userRepository.getItemsOrderByLimitOffset(List<String>, limit, offset)
-List<User> users = this.userRepository.getItemsOrderByLimitOffset(List.of("name", "-createdAt"), 10, 0);
-// SQL: SELECT * FROM users ORDER BY name ASC, created_at DESC LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getItemsByMap(Map)
-List<User> users = this.userRepository.getItemsByMap(Map.of("removedFlag", false));
-// SQL: SELECT * FROM users WHERE removed_flag = false;
-
-// List<User> users = this.userRepository.getItemsByMapLimitOffset(Map, limit, offset)
-List<User> users = this.userRepository.getItemsByMapLimitOffset(Map.of("useFlag", true), 10, 0);
-// SQL: SELECT * FROM users WHERE use_flag = true LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getItemsByMapOrderBy(Map, List<String>)
-List<User> users = this.userRepository.getItemsByMapOrderBy(
-    Map.of("removedFlag", false), 
-    List.of("name", "-id")
-);
-// SQL: SELECT * FROM users WHERE removed_flag = false ORDER BY name ASC, id DESC;
-
-// List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(Map, List<String>, limit, offset)
-List<User> users = this.userRepository.getItemsByMapOrderByLimitOffset(
-    Map.of("useFlag", true), 
-    List.of("name", "-id"),
-    10, 
-    0
-);
-// SQL: SELECT * FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
-```
-
-#### 2. DISTINCT 메서드
-
-```java
-// List<User> users = this.userRepository.getDistinctItems(Set<String>)
-List<User> users = this.userRepository.getDistinctItems(Set.of("name", "loginId"));
-// SQL: SELECT DISTINCT name, login_id FROM users;
-
-// List<User> users = this.userRepository.getDistinctItemsLimitOffset(Set<String>, limit, offset)
-List<User> users = this.userRepository.getDistinctItemsLimitOffset(Set.of("name"), 10, 0);
-// SQL: SELECT DISTINCT name FROM users LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getDistinctItemsOrderBy(Set<String>, List<String>)
-List<User> users = this.userRepository.getDistinctItemsOrderBy(
-    Set.of("name", "loginId"),
-    List.of("name", "-loginId")
-);
-// SQL: SELECT DISTINCT name, login_id FROM users ORDER BY name ASC, login_id DESC;
-
-// List<User> users = this.userRepository.getDistinctItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
-List<User> users = this.userRepository.getDistinctItemsOrderByLimitOffset(
-    Set.of("name", "loginId"),
-    List.of("name", "-loginId"),
-    10,
-    0
-);
-// SQL: SELECT DISTINCT name, login_id FROM users ORDER BY name ASC, login_id DESC LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getDistinctItemsByMap(Set<String>, Map)
-List<User> users = this.userRepository.getDistinctItemsByMap(
-    Set.of("name", "loginId"),
-    Map.of("removedFlag", false)
-);
-// SQL: SELECT DISTINCT name, login_id FROM users WHERE removed_flag = false;
-
-// List<User> users = this.userRepository.getDistinctItemsByMapLimitOffset(Set<String>, Map, limit, offset)
-List<User> users = this.userRepository.getDistinctItemsByMapLimitOffset(
-    Set.of("name"),
-    Map.of("removedFlag", false),
-    10,
-    0
-);
-// SQL: SELECT DISTINCT name FROM users WHERE removed_flag = false LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getDistinctItemsByMapOrderBy(Set<String>, Map, List<String>)
-List<User> users = this.userRepository.getDistinctItemsByMapOrderBy(
-    Set.of("name", "loginId"),
-    Map.of("useFlag", true),
-    List.of("name", "-loginId")
-);
-// SQL: SELECT DISTINCT name, login_id FROM users WHERE use_flag = true ORDER BY name ASC, login_id DESC;
-
-// List<User> users = this.userRepository.getDistinctItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
-List<User> users = this.userRepository.getDistinctItemsByMapOrderByLimitOffset(
-    Set.of("name", "loginId"),
-    Map.of("useFlag", true),
-    List.of("name", "-loginId"),
-    10,
-    0
-);
-// SQL: SELECT DISTINCT name, login_id FROM users WHERE use_flag = true ORDER BY name ASC, login_id DESC LIMIT 10 OFFSET 0;
-```
-
-#### 3. Target 컬럼 메서드
-
-```java
-// List<User> users = this.userRepository.getTargetItems(Set<String>)
-List<User> users = this.userRepository.getTargetItems(Set.of("id", "name"));
-// SQL: SELECT id, name FROM users;
-
-// List<User> users = this.userRepository.getTargetItemsLimitOffset(Set<String>, limit, offset)
-List<User> users = this.userRepository.getTargetItemsLimitOffset(Set.of("id", "name"), 10, 0);
-// SQL: SELECT id, name FROM users LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getTargetItemsOrderBy(Set<String>, List<String>)
-List<User> users = this.userRepository.getTargetItemsOrderBy(
-    Set.of("id", "name"),
-    List.of("name", "-id")
-);
-// SQL: SELECT id, name FROM users ORDER BY name ASC, id DESC;
-
-// List<User> users = this.userRepository.getTargetItemsOrderByLimitOffset(Set<String>, List<String>, limit, offset)
-List<User> users = this.userRepository.getTargetItemsOrderByLimitOffset(
-    Set.of("id", "name"),
-    List.of("name", "-id"),
-    10,
-    0
-);
-// SQL: SELECT id, name FROM users ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getTargetItemsByMap(Set<String>, Map)
-List<User> users = this.userRepository.getTargetItemsByMap(
-    Set.of("id", "name"),
-    Map.of("removedFlag", false)
-);
-// SQL: SELECT id, name FROM users WHERE removed_flag = false;
-
-// List<User> users = this.userRepository.getTargetItemsByMapLimitOffset(Set<String>, Map, limit, offset)
-List<User> users = this.userRepository.getTargetItemsByMapLimitOffset(
-    Set.of("id", "name"),
-    Map.of("removedFlag", false),
-    10,
-    0
-);
-// SQL: SELECT id, name FROM users WHERE removed_flag = false LIMIT 10 OFFSET 0;
-
-// List<User> users = this.userRepository.getTargetItemsByMapOrderBy(Set<String>, Map, List<String>)
-List<User> users = this.userRepository.getTargetItemsByMapOrderBy(
-    Set.of("id", "name"),
-    Map.of("useFlag", true),
-    List.of("name", "-id")
-);
-// SQL: SELECT id, name FROM users WHERE use_flag = true ORDER BY name ASC, id DESC;
-
-// List<User> users = this.userRepository.getTargetItemsByMapOrderByLimitOffset(Set<String>, Map, List<String>, limit, offset)
-List<User> users = this.userRepository.getTargetItemsByMapOrderByLimitOffset(
-    Set.of("id", "name"),
-    Map.of("useFlag", true),
-    List.of("name", "-id"),
-    10,
-    0
-);
-// SQL: SELECT id, name FROM users WHERE use_flag = true ORDER BY name ASC, id DESC LIMIT 10 OFFSET 0;
-```
-
-#### 4. 단일 아이템 조회
-
-```java
-// Optional<User> user = this.userRepository.getItemByMap(Map)
-Optional<User> user = this.userRepository.getItemByMap(Map.of(
-    "loginId", "developer",
-    "removedFlag", false
-));
-// SQL: SELECT * FROM users WHERE login_id = 'developer' AND removed_flag = false;
-
-// Optional<User> user = this.userRepository.getItemById(Long)
-Optional<User> user = this.userRepository.getItemById(1L);
-// SQL: SELECT * FROM users WHERE id = 1;
-```
-
-#### 5. 카운트 메서드
-
-```java
-// long count = this.userRepository.countAll()
-long count = this.userRepository.countAll();
-// SQL: SELECT COUNT(*) FROM users;
-
-// long count = this.userRepository.countByMap(Map)
-long count = this.userRepository.countByMap(Map.of("removedFlag", false));
-// SQL: SELECT COUNT(*) FROM users WHERE removed_flag = false;
-```
-
-#### 6. 삽입 메서드
-
-```java
-// this.userRepository.insert(T)
-User user = User.of(
-    "developer",
-    "password123",
-    "개발자",
-    true,
-    List.of(AuthorityEnum.NOTICE_VIEW),
-    operator
-);
-this.userRepository.insert(user);
-// SQL: INSERT INTO users (...) VALUES (...);
-
-// this.userRepository.insertBatch(List<T>)
-List<User> users = List.of(user1, user2, user3);
-this.userRepository.insertBatch(users);
-// SQL: INSERT INTO users (...) VALUES (...), (...), (...);
-```
-
-#### 7. 업데이트 메서드
-
-```java
-// this.userRepository.updateById(T, Long)
-this.userRepository.updateById(user, 1L);
-// SQL: UPDATE users SET ... WHERE id = 1;
-
-// this.userRepository.updateByMap(T, Map)
-this.userRepository.updateByMap(
-    user,
-    Map.of("loginId", "developer")
-);
-// SQL: UPDATE users SET ... WHERE login_id = 'developer';
-
-// this.userRepository.updateMapByMap(Map, Map)
-        this.userRepository.updateMapByMap(
-    Map.of("useFlag", false),
-    Map.of("removedFlag", true)
-);
-// SQL: UPDATE users SET use_flag = false WHERE removed_flag = true;
-
-// this.userRepository.updateMapById(Map, Long)
-this.userRepository.updateMapById(
-    Map.of("useFlag", false),
-    1L
-);
-// SQL: UPDATE users SET use_flag = false WHERE id = 1;
-```
-
-#### 8. 삭제 메서드
-
-```java
-// this.userRepository.deleteByMap(Map)
-this.userRepository.deleteByMap(Map.of("removedFlag", true));
-// SQL: DELETE FROM users WHERE removed_flag = true;
-
-// this.userRepository.deleteById(Long)
-this.userRepository.deleteById(1L);
-// SQL: DELETE FROM users WHERE id = 1;
-```
-
-#### 9. 조건 타입 (Condition Types)
-
-`MybatisRepository`는 다양한 조건 타입을 지원하여 유연하고 동적인 쿼리를 구축할 수 있습니다. 아래는 지원되는 조건 타입과 예제, 해당 SQL 문입니다.
-
-- **동등성 및 부등등성 (Equality and Inequality)**
-
-  ```java
-  // 동등 조건
-  Map<String, Object> conditions = Map.of("name", "John");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE name = 'John';
-
-  // 부등 조건
-  Map<String, Object> conditions = Map.of("name:not", "John");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE name <> 'John';
-  ```
-
-- **IN 및 NOT IN**
-
-  ```java
-  // IN 조건
-  Map<String, Object> conditions = Map.of("id:in", Set.of(1L, 2L, 3L));
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE id IN (1, 2, 3);
-
-  // NOT IN 조건
-  Map<String, Object> conditions = Map.of("id:notIn", Set.of(1L, 2L, 3L));
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE id NOT IN (1, 2, 3);
-  ```
-
-- **NULL 및 NOT NULL**
-
-  ```java
-  // IS NULL 조건
-  Map<String, Object> conditions = Map.of("deletedAt:null", null);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE deleted_at IS NULL;
-
-  // IS NOT NULL 조건
-  Map<String, Object> conditions = Map.of("deletedAt:notNull", null);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE deleted_at IS NOT NULL;
-  ```
-
-- **문자열 연산 (String Operations)**
-
-  ```java
-  // 포함 (substring)
-  Map<String, Object> conditions = Map.of("description:contains", "admin");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') > 0;
-
-  // 포함하지 않음 (substring)
-  Map<String, Object> conditions = Map.of("description:notContains", "admin");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE INSTR(`description`, 'admin') = 0;
-
-  // 시작 (startsWith)
-  Map<String, Object> conditions = Map.of("username:startsWith", "john");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE INSTR(`username`, 'john') = 1;
-
-  // 끝 (endsWith)
-  Map<String, Object> conditions = Map.of("username:endsWith", "doe");
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE RIGHT(`username`, CHAR_LENGTH('doe')) = 'doe';
-  ```
-
-- **비교 연산자 (Comparison Operators)**
-
-  ```java
-  // 미만 (Less Than)
-  Map<String, Object> conditions = Map.of("age:lt", 30);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE age < 30;
-
-  // 이하 (Less Than or Equal To)
-  Map<String, Object> conditions = Map.of("age:lte", 30);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE age <= 30;
-
-  // 초과 (Greater Than)
-  Map<String, Object> conditions = Map.of("age:gt", 20);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE age > 20;
-
-  // 이상 (Greater Than or Equal To)
-  Map<String, Object> conditions = Map.of("age:gte", 20);
-  this.userRepository.getItemsByMap(conditions);
-  // SQL: SELECT * FROM users WHERE age >= 20;
-  ```
-
-- **기본 동등성 (Default Equality)**
-
-  조건 타입이 지정되지 않은 경우 기본적으로 동등 조건 (`eq`)이 적용됩니다.
-
-  ```java
-  // 동등 조건 (기본)
-  Map<String, Object> conditions = Map.of("email", "bestheroz@gmail.com");
-  this.userRepository.getItemByMap(conditions);
-  // SQL: SELECT * FROM users WHERE email = 'bestheroz@gmail.com';
-  ```
-
-**주의사항:**
-1. `Map`의 key는 카멜케이스로 작성되어야 하며, 자동으로 스네이크케이스로 변환됩니다.
-2. 정렬 조건에서 컬럼명만 입력할 경우 기본적으로 오름차순(`ASC`)으로 정렬되며, `-`를 접두사로 붙이면 내림차순(`DESC`)으로 정렬됩니다.
-3. `null`을 전달할 경우 빈 컬렉션으로 처리됩니다.
-4. 잘못된 컬럼명이나 형식을 전달할 경우 SQL 예외가 발생합니다.
-
-## 예제
-
-### 엔티티 정의
-
-```java
-package com.github.bestheroz.demo.domain;
-
-import jakarta.persistence.Table;
-import lombok.Data;
-
-@Data
-@Table(name = "users")
-public class User {
-    @Column  // @Column 어노테이션이 있어야지 DB 컬럼으로 인식
-    private Long id;
-    @Column
-    private String loginId;
-    @Column
-    private String password;
-    @Column(name = "username")  // 이 경우 DB 컬럼은 username
-    private String name;
-    @Column
-    private Boolean useFlag;
-    @Column(name = "is_removed")  // 이 경우 DB 컬럼은 is_removed
-    private Boolean removedFlag;
-    // 추가 필드 및 메서드...
-}
-```
-
-### 리포지토리 생성
-
-```java
-package com.github.bestheroz.demo.repository;
-
-import com.github.bestheroz.demo.domain.User;
-import io.github.bestheroz.mybatis.MybatisRepository;
-import org.apache.ibatis.annotations.Mapper;
-import org.springframework.stereotype.Repository;
-
-@Mapper
-@Repository
-public interface UserRepository extends MybatisRepository<User> {}
-```
-
-### 서비스 구현
-
-```java
-package com.github.bestheroz.demo.services;
-
-import com.github.bestheroz.demo.domain.User;
-import com.github.bestheroz.demo.dtos.user.UserDto;
-import com.github.bestheroz.demo.repository.UserRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import lombok.RequiredArgsConstructor;
-
-@Service
-@Transactional
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
-
-    @Transactional(readOnly = true)
-    public UserDto.Response getUser(Long id) {
-        return this.userRepository.getItemById(id)
-            .map(UserDto.Response::of)
-            .orElseThrow(() -> new RequestException400(ExceptionCode.UNKNOWN_USER));
-    }
-
-    // 추가적인 서비스 메서드...
-}
-```
+## 알아두어야 할 것
+
+- **`@Column` 이 없는 필드는 없는 것으로 취급됩니다.** 조회·삽입·수정 대상에서 빠지고, 조건 Map 에 그 필드명을 넣으면 `MybatisRepositoryException` 이 발생합니다.
+- **`...ById` 메서드는 `id` 라는 이름의 `Long` 필드를 전제합니다.** `@Id` 애노테이션은 읽지 않습니다. PK 의 이름이나 타입이 다르면 `...ByMap` 을 쓰세요.
+- **UPDATE 와 DELETE 는 조건이 비면 예외를 던집니다.** 전체 갱신·전체 삭제를 실수로 실행할 수 없습니다.
+- **알 수 없는 조건타입은 조용히 `eq` 가 됩니다.** `name:contain` 처럼 오타를 내도 오류 없이 동등 비교로 처리됩니다.
+- Map 의 키는 컬럼명이 아니라 **자바 필드명(카멜케이스)** 입니다.
+- 조회는 `SELECT *` 가 아니라 `@Column` 필드 목록을 명시적으로 나열합니다. 컬럼 순서는 보장되지 않습니다.
+- 값은 이스케이프 후 SQL 리터럴로 삽입되고, 식별자는 허용 문자 화이트리스트와 SQL 키워드 차단 목록으로 검증됩니다.
 
 ## 기여 방법
 
-기여를 환영합니다! 저장소를 포크한 후 개선 사항이나 버그 수정을 위한 풀 리퀘스트를 제출해주세요.
+이슈와 PR 을 환영합니다. 코드를 수정했다면 `./gradlew spotlessApply` 를 먼저 실행해 주세요.
 
 ## 라이선스
 
-이 프로젝트는 [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) 하에 라이선스가 부여되었습니다.
-
----
-
-*❤️로 개발된 프로젝트 by [bestheroz](https://github.com/bestheroz)*
+[Apache License 2.0](LICENSE)

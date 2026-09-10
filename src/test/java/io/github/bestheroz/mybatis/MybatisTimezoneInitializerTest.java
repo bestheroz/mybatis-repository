@@ -65,6 +65,39 @@ class MybatisTimezoneInitializerTest {
   }
 
   @Test
+  @DisplayName("타임존을 지정하면 준비 로그가 그 값 하나만 알려야 한다")
+  void readyMessage_ShouldReportSingleZoneWhenConfigured() {
+    // given
+    MybatisRepositoryProperties properties = new MybatisRepositoryProperties();
+    properties.setTimezone("Asia/Seoul");
+
+    // when
+    String message = MybatisAutoConfiguration.readyMessage("test", properties);
+
+    // then
+    assertThat(message)
+        .isEqualTo("Ready to use MybatisRepository (test), datetime literals in Asia/Seoul");
+  }
+
+  @Test
+  @DisplayName("타임존 미설정이면 준비 로그가 Date 의 기본값도 함께 알려야 한다")
+  void readyMessage_ShouldReportDateDefaultWhenUnset() {
+    // given: 미설정이면 Instant 는 UTC, Date 는 JVM 기본 타임존이라 둘이 갈릴 수 있다
+    MybatisRepositoryProperties properties = new MybatisRepositoryProperties();
+    String prefix = "Ready to use MybatisRepository (test), datetime literals in UTC";
+
+    // when
+    String message = MybatisAutoConfiguration.readyMessage("test", properties);
+
+    // then
+    if (ZoneId.of("UTC").equals(ZoneId.systemDefault())) {
+      assertThat(message).isEqualTo(prefix);
+    } else {
+      assertThat(message).isEqualTo(prefix + " (java.util.Date in " + ZoneId.systemDefault() + ")");
+    }
+  }
+
+  @Test
   @DisplayName("다른 초기화기가 프로퍼티를 얹은 뒤 읽도록 가장 낮은 우선순위여야 한다")
   void getOrder_ShouldRunLast() {
     assertThat(initializer.getOrder()).isEqualTo(Ordered.LOWEST_PRECEDENCE);
