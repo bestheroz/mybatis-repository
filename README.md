@@ -291,6 +291,8 @@ mybatis-repository:
 
 이슈와 PR 을 환영합니다. 코드를 수정했다면 `./gradlew spotlessApply` 를 먼저 실행해 주세요.
 
+CI 는 JDK 17 로 빌드합니다. `gradle/gradle-daemon-jvm.properties` 가 로컬 빌드의 데몬 JVM 도 17 로 맞추므로(설치된 17 이 없으면 Corretto 17 을 한 번 자동으로 내려받음) `JAVA_HOME` 이 JDK 8 이어도 `./gradlew` 가 동작합니다. 배포 jar 는 `--release 8` 로 Java 8 바이트코드를 유지합니다. CI 와 같은 검증은 `./gradlew check jar` 입니다.
+
 ## 라이선스
 
 [Apache License 2.0](LICENSE)

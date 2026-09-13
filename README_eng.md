@@ -291,6 +291,8 @@ Timestamps may be `Instant`, `LocalDateTime`, `java.util.Date` or `java.sql.Time
 
 Issues and pull requests are welcome. Run `./gradlew spotlessApply` before submitting code changes.
 
+CI builds on JDK 17. `gradle/gradle-daemon-jvm.properties` pins the local daemon JVM to 17 as well (Corretto 17 is downloaded once when no 17 is installed), so `./gradlew` works even with `JAVA_HOME` on JDK 8. The published jar stays Java 8 bytecode via `--release 8`. `./gradlew check jar` runs the same checks as CI.
+
 ## License
 
 [Apache License 2.0](LICENSE)
