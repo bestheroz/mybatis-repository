@@ -109,6 +109,10 @@ class MybatisMapperRegistrationTest {
             statementOf(configuration, IdMapper.class, MybatisCommand.INSERT).getSqlCommandType())
         .isEqualTo(SqlCommandType.INSERT);
     assertThat(
+            statementOf(configuration, IdMapper.class, MybatisCommand.INSERT_BATCH)
+                .getSqlCommandType())
+        .isEqualTo(SqlCommandType.INSERT);
+    assertThat(
             statementOf(configuration, IdMapper.class, MybatisCommand.UPDATE_MAP_BY_MAP)
                 .getSqlCommandType())
         .isEqualTo(SqlCommandType.UPDATE);

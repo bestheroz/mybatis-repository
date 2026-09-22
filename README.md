@@ -132,14 +132,18 @@ List.of("name", "-createdAt")   // ORDER BY `name` ASC, `created_at` DESC
 | `getItemByMap(Map)`          | `Optional<T>`          |
 | `countAll()`                 | 전체 행 수               |
 | `countByMap(Map)`            | 조건에 맞는 행 수          |
-| `insert(T)`                  | 단건 삽입                |
-| `insertBatch(List<T>)`       | 한 문장으로 다건 삽입       |
-| `updateById(T, Long)`        | 엔티티에서 값이 있는 필드만 갱신 |
-| `updateByMap(T, Map)`        | 같은 규칙으로 조건 갱신      |
-| `updateMapById(Map, Long)`   | 지정한 필드만 갱신          |
-| `updateMapByMap(Map, Map)`   | 지정한 필드만 조건 갱신      |
-| `deleteById(Long)`           | 단건 삭제                |
-| `deleteByMap(Map)`           | 조건 삭제                |
+| `insert(T)`                  | 단건 삽입, 영향 행 수 반환   |
+| `insertBatch(List<T>)`       | 한 문장으로 다건 삽입, 영향 행 수 반환 |
+| `updateById(T, Long)`        | 엔티티에서 값이 있는 필드만 갱신, 영향 행 수 반환 |
+| `updateByMap(T, Map)`        | 같은 규칙으로 조건 갱신, 영향 행 수 반환 |
+| `updateMapById(Map, Long)`   | 지정한 필드만 갱신, 영향 행 수 반환 |
+| `updateMapByMap(Map, Map)`   | 지정한 필드만 조건 갱신, 영향 행 수 반환 |
+| `deleteById(Long)`           | 단건 삭제, 영향 행 수 반환   |
+| `deleteByMap(Map)`           | 조건 삭제, 영향 행 수 반환   |
+
+쓰기 메서드는 모두 JDBC 가 돌려준 영향 행 수를 `int` 로 반환합니다. 존재하지 않는 id 를 갱신하거나 삭제하면 `0` 이 돌아옵니다.
+
+단, `ExecutorType.BATCH`(`mybatis.executor-type=batch`) 로 실행하면 MyBatis 는 `flushStatements()` 전까지 행 수를 알 수 없어 `BatchExecutor.BATCH_UPDATE_RETURN_VALUE`(`Integer.MIN_VALUE + 1002`) 를 돌려줍니다. 그 값은 `0` 도 아니고 양수도 아니므로, BATCH 세션에서는 반환값으로 성공 여부를 판단하지 마세요.
 
 ### `null` 의 뜻 — 엔티티 경로와 맵 경로가 다릅니다
 

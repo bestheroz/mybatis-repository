@@ -388,7 +388,7 @@ public interface MybatisRepositoryBase<T> {
   }
 
   @UpdateProvider(type = MybatisCommand.class, method = MybatisCommand.UPDATE_MAP_BY_MAP)
-  void buildUpdateSQL(
+  int buildUpdateSQL(
       ProviderContext context,
       final Map<String, Object> updateMap,
       final Map<String, Object> whereConditions);
@@ -397,19 +397,23 @@ public interface MybatisRepositoryBase<T> {
    * 맵으로 갱신한다. 키가 없으면 그 컬럼은 문장에 나오지 않고, 키가 있고 값이 {@code null} 이면 {@code `컬럼` = null} 로 나가 그 컬럼을 비운다.
    *
    * <p>컬럼을 NULL 로 비울 수 있는 경로는 여기와 {@link #updateMapById(Map, Long)} 뿐이다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
    */
-  default void updateMapByMap(
+  default int updateMapByMap(
       final Map<String, Object> updateMap, final Map<String, Object> whereConditions) {
-    this.buildUpdateSQL(null, updateMap, whereConditions);
+    return this.buildUpdateSQL(null, updateMap, whereConditions);
   }
 
   /**
    * 엔티티로 갱신한다. 값이 {@code null} 인 필드는 "정하지 않았다" 는 뜻이라 SET 절에서 빠지고, 그 컬럼은 저장된 값을 그대로 유지한다.
    *
    * <p>컬럼을 NULL 로 비우려면 {@link #updateMapById(Map, Long)} 에 {@code null} 값을 담아 넘긴다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
    */
-  default void updateById(final T entity, final Long id) {
-    this.buildUpdateSQL(
+  default int updateById(final T entity, final Long id) {
+    return this.buildUpdateSQL(
         null, MybatisCommand.toNonNullMap(entity), Collections.singletonMap("id", id));
   }
 
@@ -417,9 +421,11 @@ public interface MybatisRepositoryBase<T> {
    * 엔티티로 갱신한다. 값이 {@code null} 인 필드는 "정하지 않았다" 는 뜻이라 SET 절에서 빠지고, 그 컬럼은 저장된 값을 그대로 유지한다.
    *
    * <p>컬럼을 NULL 로 비우려면 {@link #updateMapByMap(Map, Map)} 에 {@code null} 값을 담아 넘긴다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
    */
-  default void updateByMap(final T entity, final Map<String, Object> whereConditions) {
-    this.buildUpdateSQL(
+  default int updateByMap(final T entity, final Map<String, Object> whereConditions) {
+    return this.buildUpdateSQL(
         null,
         MybatisCommand.toNonNullMap(entity),
         whereConditions == null ? Collections.emptyMap() : whereConditions);
@@ -429,19 +435,32 @@ public interface MybatisRepositoryBase<T> {
    * 맵으로 갱신한다. 키가 없으면 그 컬럼은 문장에 나오지 않고, 키가 있고 값이 {@code null} 이면 {@code `컬럼` = null} 로 나가 그 컬럼을 비운다.
    *
    * <p>컬럼을 NULL 로 비울 수 있는 경로는 여기와 {@link #updateMapByMap(Map, Map)} 뿐이다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
    */
-  default void updateMapById(final Map<String, Object> updateMap, final Long id) {
-    this.buildUpdateSQL(null, updateMap, Collections.singletonMap("id", id));
+  default int updateMapById(final Map<String, Object> updateMap, final Long id) {
+    return this.buildUpdateSQL(null, updateMap, Collections.singletonMap("id", id));
   }
 
   @DeleteProvider(type = MybatisCommand.class, method = MybatisCommand.DELETE_BY_MAP)
-  void buildDeleteSQL(ProviderContext context, final Map<String, Object> whereConditions);
+  int buildDeleteSQL(ProviderContext context, final Map<String, Object> whereConditions);
 
-  default void deleteByMap(final Map<String, Object> whereConditions) {
-    this.buildDeleteSQL(null, whereConditions == null ? Collections.emptyMap() : whereConditions);
+  /**
+   * 조건에 맞는 행을 지운다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
+   */
+  default int deleteByMap(final Map<String, Object> whereConditions) {
+    return this.buildDeleteSQL(
+        null, whereConditions == null ? Collections.emptyMap() : whereConditions);
   }
 
-  default void deleteById(final Long id) {
-    this.buildDeleteSQL(null, Collections.singletonMap("id", id));
+  /**
+   * 자바 필드명 {@code id} 가 주어진 값인 행을 지운다.
+   *
+   * @return 영향 행 수(JDBC 가 돌려준 값)
+   */
+  default int deleteById(final Long id) {
+    return this.buildDeleteSQL(null, Collections.singletonMap("id", id));
   }
 }

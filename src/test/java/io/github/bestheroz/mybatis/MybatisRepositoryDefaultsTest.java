@@ -68,6 +68,10 @@ class MybatisRepositoryDefaultsTest {
     Call call();
   }
 
+  /**
+   * 쓰기 프로바이더 네 개는 서로 다른 값을 돌려준다. {@link NoIdRepo} 는 또 다른 네 값을 쓰는데, 두 스텁이 같은 값을 쓰면 껍데기가 프로바이더의 반환값을
+   * 흘려 보내는지 확인할 방법이 없기 때문이다.
+   */
   static class IdRepo implements MybatisRepository<TestUser>, Recording {
     private final Call call = new Call();
 
@@ -110,26 +114,30 @@ class MybatisRepositoryDefaultsTest {
     }
 
     @Override
-    public void buildInsertSQL(TestUser entity) {
+    public int buildInsertSQL(TestUser entity) {
       call.record("insert", entity);
+      return 11;
     }
 
     @Override
-    public void buildInsertBatchSQL(List<TestUser> entities) {
+    public int buildInsertBatchSQL(List<TestUser> entities) {
       call.record("insertBatch", entities);
+      return 12;
     }
 
     @Override
-    public void buildUpdateSQL(
+    public int buildUpdateSQL(
         ProviderContext context,
         Map<String, Object> updateMap,
         Map<String, Object> whereConditions) {
       call.record("update", updateMap, whereConditions);
+      return 13;
     }
 
     @Override
-    public void buildDeleteSQL(ProviderContext context, Map<String, Object> whereConditions) {
+    public int buildDeleteSQL(ProviderContext context, Map<String, Object> whereConditions) {
       call.record("delete", whereConditions);
+      return 14;
     }
   }
 
@@ -175,26 +183,30 @@ class MybatisRepositoryDefaultsTest {
     }
 
     @Override
-    public void buildInsertSQL(TestUser entity) {
+    public int buildInsertSQL(TestUser entity) {
       call.record("insert", entity);
+      return 21;
     }
 
     @Override
-    public void buildInsertBatchSQL(List<TestUser> entities) {
+    public int buildInsertBatchSQL(List<TestUser> entities) {
       call.record("insertBatch", entities);
+      return 22;
     }
 
     @Override
-    public void buildUpdateSQL(
+    public int buildUpdateSQL(
         ProviderContext context,
         Map<String, Object> updateMap,
         Map<String, Object> whereConditions) {
       call.record("update", updateMap, whereConditions);
+      return 23;
     }
 
     @Override
-    public void buildDeleteSQL(ProviderContext context, Map<String, Object> whereConditions) {
+    public int buildDeleteSQL(ProviderContext context, Map<String, Object> whereConditions) {
       call.record("delete", whereConditions);
+      return 24;
     }
   }
 
@@ -478,5 +490,40 @@ class MybatisRepositoryDefaultsTest {
 
     repo.insertBatch(entities);
     assertThat(repo.call().args[0]).isSameAs(entities);
+  }
+
+  @Test
+  @DisplayName("쓰기 껍데기는 프로바이더가 돌려준 영향 행 수를 그대로 돌려줘야 한다")
+  void writeDefaults_ShouldReturnAffectedRowCountFromProvider() {
+    // given
+    // 껍데기가 프로바이더를 부르기만 하고 반환값을 버리면 호출부는 몇 행이 바뀌었는지 알 수 없다.
+    // 두 인터페이스의 스텁이 서로 다른 값을 돌려주므로, 한쪽 값을 다른 쪽에서 읽는 실수도 드러난다.
+    IdRepo idRepo = new IdRepo();
+    NoIdRepo noIdRepo = new NoIdRepo();
+    TestUser entity = new TestUser();
+    // null 아닌 필드가 하나는 있어야 toNonNullMap 이 빈 맵을 만들지 않는다.
+    entity.userId = 7L;
+    List<TestUser> entities = Collections.singletonList(entity);
+    Map<String, Object> updateMap = Collections.<String, Object>singletonMap("name", "kim");
+    Map<String, Object> where = Collections.<String, Object>singletonMap("userId", 7L);
+
+    // when / then
+    assertThat(idRepo.insert(entity)).isEqualTo(11);
+    assertThat(idRepo.insertBatch(entities)).isEqualTo(12);
+    assertThat(idRepo.updateMapByMap(updateMap, where)).isEqualTo(13);
+    assertThat(idRepo.updateById(entity, 7L)).isEqualTo(13);
+    assertThat(idRepo.updateByMap(entity, where)).isEqualTo(13);
+    assertThat(idRepo.updateMapById(updateMap, 7L)).isEqualTo(13);
+    assertThat(idRepo.deleteByMap(where)).isEqualTo(14);
+    assertThat(idRepo.deleteById(7L)).isEqualTo(14);
+
+    assertThat(noIdRepo.insert(entity)).isEqualTo(21);
+    assertThat(noIdRepo.insertBatch(entities)).isEqualTo(22);
+    assertThat(noIdRepo.updateMapByMap(updateMap, where)).isEqualTo(23);
+    assertThat(noIdRepo.updateById(entity, 7L)).isEqualTo(23);
+    assertThat(noIdRepo.updateByMap(entity, where)).isEqualTo(23);
+    assertThat(noIdRepo.updateMapById(updateMap, 7L)).isEqualTo(23);
+    assertThat(noIdRepo.deleteByMap(where)).isEqualTo(24);
+    assertThat(noIdRepo.deleteById(7L)).isEqualTo(24);
   }
 }

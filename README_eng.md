@@ -132,14 +132,18 @@ List.of("name", "-createdAt")   // ORDER BY `name` ASC, `created_at` DESC
 | `getItemByMap(Map)`          | `Optional<T>`                      |
 | `countAll()`                 | total row count                    |
 | `countByMap(Map)`            | matching row count                 |
-| `insert(T)`                  | insert one row                     |
-| `insertBatch(List<T>)`       | insert many rows in one statement  |
-| `updateById(T, Long)`        | update the entity's non-null fields |
-| `updateByMap(T, Map)`        | same, matched by filter            |
-| `updateMapById(Map, Long)`   | update only the listed fields      |
-| `updateMapByMap(Map, Map)`   | same, matched by filter            |
-| `deleteById(Long)`           | delete one row                     |
-| `deleteByMap(Map)`           | delete by filter                   |
+| `insert(T)`                  | insert one row, returns the affected row count |
+| `insertBatch(List<T>)`       | insert many rows in one statement, returns the affected row count |
+| `updateById(T, Long)`        | update the entity's non-null fields, returns the affected row count |
+| `updateByMap(T, Map)`        | same, matched by filter, returns the affected row count |
+| `updateMapById(Map, Long)`   | update only the listed fields, returns the affected row count |
+| `updateMapByMap(Map, Map)`   | same, matched by filter, returns the affected row count |
+| `deleteById(Long)`           | delete one row, returns the affected row count |
+| `deleteByMap(Map)`           | delete by filter, returns the affected row count |
+
+Every write method returns the affected row count JDBC reported, as an `int`. Updating or deleting an id that does not exist returns `0`.
+
+One exception: under `ExecutorType.BATCH` (`mybatis.executor-type=batch`) MyBatis cannot know the row count until `flushStatements()`, so it returns `BatchExecutor.BATCH_UPDATE_RETURN_VALUE` (`Integer.MIN_VALUE + 1002`). That value is neither `0` nor positive, so do not read the return value as success or failure in a BATCH session.
 
 ### What `null` means — the entity path and the map path differ
 
